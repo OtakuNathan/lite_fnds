@@ -1,13 +1,10 @@
 ﻿#ifndef __LITE_FNDS_FLOW_BLUEPRINT_H__
 #define __LITE_FNDS_FLOW_BLUEPRINT_H__
 
-#include <atomic>
 #include <utility>
 #include <tuple>
-#include <cassert>
-
-#include "../task/task_wrapper.h"
-#include "../task/task_core.h"
+#include "../base/traits.h"
+#include "../memory/result_t.h"
 
 namespace lite_fnds {
 

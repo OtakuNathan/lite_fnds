@@ -8,8 +8,8 @@
 #include <utility>
 #include <stdexcept>
 
-#include "flow_blueprint.h"
 #include "../task/task_wrapper.h"
+#include "flow_blueprint.h"
 
 namespace lite_fnds {
     enum class cancel_kind {

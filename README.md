@@ -88,22 +88,101 @@ runner(42);  // start execution
 ✔ Exception-safe pipeline
 Any exception inside a node is captured as std::exception_ptr and forwarded.
 ```cpp
-auto bp = make_blueprint<int>()
-    | map([](int x) noexcept { return x + 10; })
-    | then([](auto r) {
-        if (r.value() > 20) throw std::logic_error("too big");
-        return r;
-    })
-    | catch_exception<std::logic_error>([](const auto& e) {
-        return -1;      // recover value
-    })
-    | end([](auto r) {
-        std::cout << "result: " << r.value() << "\n";
-        return r;
-    });
+#include <iostream>
 
-auto runner = make_runner(bp);
-runner(5);  // -> prints "result: -1"
+#include "flow/flow_blueprint.h"
+#include "flow/flow_node.h"
+#include "flow/flow_runner.h"
+
+struct fake_executor {
+    void dispatch(lite_fnds::task_wrapper_sbo sbo) noexcept {
+        sbo();
+    }
+};
+
+int main(int argc, char *argv[]) {
+    using std::cout;
+    using std::endl;
+
+    using lite_fnds::result_t;
+    using lite_fnds::value_tag;
+    using lite_fnds::error_tag;
+
+    using lite_fnds::make_blueprint;
+    using lite_fnds::via;
+    using lite_fnds::map;
+    using lite_fnds::then;
+    using lite_fnds::end;
+    using lite_fnds::on_error;
+    using lite_fnds::make_runner;
+    using lite_fnds::catch_exception;
+    using E = std::exception_ptr;
+
+    fake_executor executor;
+
+    int v = 100;
+    auto bp = make_blueprint<int>()
+         | via(&executor)
+         | map([&v] (int x) noexcept{
+             return v += 10, (double)v + x;
+         })
+         | then([](result_t<double, E> f) {
+             std::cout << f.value() << std::endl;
+             if (f.value() > 120) {
+                 throw std::logic_error("exception on then node error");
+             }
+             f.value() += 10;
+             return f;
+         })
+         | on_error([&](result_t<double, E> f) {
+             try {
+                 std::rethrow_exception(f.error());
+             } catch (const std::logic_error& e) {
+                 std::cout << e.what() << std::endl;
+                 // return result_t<double, E>(value_tag, 1.0);
+                 throw e;
+             } catch (...) {
+                 return result_t<double, E>(error_tag, std::current_exception());
+             }
+         })
+         | catch_exception<std::logic_error>([](const std::logic_error& e) {
+                std::cout << e.what() << endl;
+                return 3.0;
+            })
+         | end([](result_t<double, E> f) {
+             if (f.has_value()) {
+                 std::cout << "finaly value is: " << f.value() << std::endl;
+             }
+             return f;
+         });
+
+    using bp_t = decltype(bp);
+    std::shared_ptr<bp_t> bp_ptr = std::make_shared<bp_t>(std::move(bp));
+    auto runner = make_runner(bp_ptr);
+
+    runner(10);
+    cout << "V become after one shot of bp:" << v << endl;
+    cout << endl;
+
+    /*
+    * 120
+    * finaly value is: 130
+    * become after one shot of bp:110
+    */
+
+    runner(10);
+    cout << "V become after one shot of bp:" << v << endl;
+    cout << endl;
+
+    /*
+     * 130
+     * exception on then node error
+     * exception on then node error
+     * finaly value is: 3
+     * V become after one shot of bp:120
+     */
+    return 0;
+}
 ```
 
 ⚙️ Build

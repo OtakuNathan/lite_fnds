@@ -1,6 +1,7 @@
 ﻿#ifndef __LITE_FNDS_FLOW_NODES_H__
 #define __LITE_FNDS_FLOW_NODES_H__
 
+#include "../task/task_wrapper.h"
 #include "flow_blueprint.h"
 
 namespace lite_fnds {
@@ -55,7 +56,7 @@ namespace lite_fnds {
                     }
                     return result_t<F_O, E>(error_tag, std::move(in).error());
                 };
-                return flow_calc_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
+                return flow_calc_node<result_t<F_I, E>, result_t<F_O, E>, decltype(wrapper)>(std::move(wrapper));
             }
         };
 
@@ -115,6 +116,7 @@ namespace lite_fnds {
             template <typename F_I, typename F_O>
             static auto make(error_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 auto wrapper = [f = std::move(self.f)](F_I in) noexcept {
+
                     try {
                         if (in.has_value()) {
                             return F_O(value_tag, std::move(in).value());
