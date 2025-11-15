@@ -155,7 +155,11 @@ namespace lite_fnds {
                     try {
                         std::rethrow_exception(in.error());
                     } catch (const Exception& e) {
-                        return call<F_O, std::exception_ptr, F>(std::is_void<F_O>{}, std::false_type{}, f, e);
+                        try {
+                            return call<F_O, std::exception_ptr, F>(std::is_void<F_O>{}, std::false_type{}, f, e);
+                        } catch (...) {
+                            return R(error_tag, std::current_exception());
+                        }
                     } catch (...) {
                         return R(error_tag, std::current_exception());
                     }
@@ -199,18 +203,18 @@ namespace lite_fnds {
 
             Executor e;
 
-            template <typename F_I, typename F_O>
+            template <typename F_I>
             static auto make(via_node&& node) noexcept {
                 auto wrapper = [e = std::move(node.e)](task_wrapper_sbo sbo) noexcept {
                     e->dispatch(std::move(sbo));
                 };
-                return flow_control_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
+                return flow_control_node<F_I, F_I, decltype(wrapper)>(std::move(wrapper));
             }
         };
 
         template <typename I, typename O, typename... Nodes, typename Executor>
         auto operator|(flow_blueprint<I, O, Nodes...> bp, via_node<Executor> a) {
-            auto node = via_node<Executor>::template make<I, O>(std::move(a));
+            auto node = via_node<Executor>::template make<O>(std::move(a));
             return std::move(bp) | std::move(node);
         }
 

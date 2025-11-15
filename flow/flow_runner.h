@@ -166,7 +166,7 @@ namespace lite_fnds {
                 auto controller = self.controller;
                 auto wrapper = [bp = std::move(bp),
                         controller = std::move(controller),
-                        in = std::forward<In>(in)]() mutable {
+                        in = std::forward<In>(in)]() mutable noexcept {
                     flow_runner next_runner(std::move(bp), std::move(controller));
                     step<Index - 1>::run(next_runner, std::move(in));
                 };
