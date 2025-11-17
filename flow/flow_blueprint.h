@@ -257,6 +257,12 @@ namespace flow_impl {
         ~flow_blueprint() noexcept = default;
     };
 
+    template <typename T>
+    struct is_blueprint : std::false_type {};
+
+    template <typename I, typename O, typename ... Nodes>
+    struct is_blueprint<flow_blueprint<I, O, Nodes...>> : std::true_type { };
+
     template <size_t ...>
     struct sequence { };
 
@@ -326,7 +332,7 @@ namespace flow_impl {
         static_assert(is_invocable_with<F, O>::value,
             "calc node is not invocable with current blueprint output type");
         auto nodes = std::tuple_cat(std::make_tuple(std::move(a)), std::move(bp.nodes_));
-        return flow_blueprint<I, invoke_result_t<F&, O>, flow_calc_node<F_I, F_O, F>, flow_control_node<P_I, P_O, P>, Others...>(
+        return flow_blueprint<I, F_O, flow_calc_node<F_I, F_O, F>, flow_control_node<P_I, P_O, P>, Others...>(
             std::move(nodes)
         );
     }

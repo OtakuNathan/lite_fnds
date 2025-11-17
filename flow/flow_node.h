@@ -7,23 +7,27 @@
 namespace lite_fnds {
     namespace flow_impl {
         template <typename F_O, typename E, typename F, typename F_I>
-        result_t<F_O, E> call(std::false_type, std::false_type, F& f, F_I&& in) noexcept {
+        result_t<F_O, E> call(std::false_type, std::false_type, F& f, F_I&& in) 
+            noexcept(is_nothrow_invocable_with<F&, F_I&&>::value) {
             return result_t<F_O, E>(value_tag, f(std::forward<F_I>(in)));
         }
 
         template <typename F_O, typename E, typename F, typename F_I>
-        result_t<F_O, E> call(std::true_type, std::false_type, F& f, F_I&& in) noexcept {
+        result_t<F_O, E> call(std::true_type, std::false_type, F& f, F_I&& in) 
+            noexcept(is_nothrow_invocable_with<F&, F_I&&>::value) {
             f(std::forward<F_I>(in));
             return result_t<F_O, E>(value_tag);
         }
 
         template <typename F_O, typename E, typename F, typename F_I>
-        result_t<F_O, E> call(std::false_type, std::true_type, F& f, F_I&&) noexcept {
+        result_t<F_O, E> call(std::false_type, std::true_type, F& f, F_I&&) 
+            noexcept(is_nothrow_invocable_with<F&, void>::value) {
             return result_t<F_O, E>(value_tag, f());
         }
 
         template <typename F_O, typename E, typename F, typename F_I>
-        result_t<F_O, E> call(std::true_type, std::true_type, F& f, F_I&&) noexcept {
+        result_t<F_O, E> call(std::true_type, std::true_type, F& f, F_I&&) 
+            noexcept(is_nothrow_invocable_with<F&, void>::value) {
             f();
             return result_t<F_O, E>(value_tag);
         }
@@ -180,6 +184,11 @@ namespace lite_fnds {
             static_assert(std::is_convertible<T, F_O>::value, "The callable F in catch_exception must return a value "
                                                               "which is convertible the last node's value type,"
                                                               "namely typename result<T, E>::value_type");
+            using E = typename O::error_type;
+            static_assert(std::is_convertible<E, std::exception_ptr>::value,
+                "catch_exception requires the error_type of the current blueprint "
+                "to be std::exception_ptr (or convertible to it).");
+
             auto node = exception_catch_node<F, Exception>::template make<O, F_O>(std::move(a));
             return std::move(bp) | std::move(node);
         }
