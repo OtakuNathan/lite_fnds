@@ -32,14 +32,14 @@ namespace lite_fnds {
             return result_t<F_O, E>(value_tag);
         }
 
-        /// map
+        /// transform
         template <typename F>
-        struct map_node {
+        struct transform_node {
             F f;
 
             template <typename F_I, typename E, 
                 std::enable_if_t<negation_v<std::is_void<F_I>>>* = nullptr>
-            static auto make(map_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
+            static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F, F_I>;
                 auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable noexcept {
                     if (in.has_value()) {
@@ -52,7 +52,7 @@ namespace lite_fnds {
 
             template <typename F_I, typename E, 
                 std::enable_if_t<std::is_void<F_I>::value>* = nullptr>
-            static auto make(map_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
+            static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F>;
                 auto wrapper = [f = std::move(self.f)](result_t<F_I, E> in) mutable noexcept {
                     if (in.has_value()) {
@@ -64,16 +64,15 @@ namespace lite_fnds {
             }
         };
 
-        template <typename T> struct TD;
         template <typename I, typename O, typename... Nodes, typename F>
-        auto operator|(flow_blueprint<I, O, Nodes...> bp, map_node<F> a) {
+        auto operator|(flow_blueprint<I, O, Nodes...> bp, transform_node<F> a) {
             static_assert(is_nothrow_invocable_with<F, typename O::value_type>::value,
                 "The callable F is not compatible with current blueprint, "
                 "and must be nothrow-invocable.");
 
             using T = typename O::value_type;
             using E = typename O::error_type;
-            auto node = map_node<F>::template make<T, E>(std::move(a));
+            auto node = transform_node<F>::template make<T, E>(std::move(a));
 
             return std::move(bp) | std::move(node);
         }
@@ -299,8 +298,8 @@ namespace lite_fnds {
 
 
     template <typename F>
-    inline auto map(F&& f) noexcept {
-        return flow_impl::map_node<std::decay_t<F>> { std::forward<F>(f) };
+    inline auto transform(F&& f) noexcept {
+        return flow_impl::transform_node<std::decay_t<F>> { std::forward<F>(f) };
     }
 
     template <typename F>

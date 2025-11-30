@@ -98,13 +98,15 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
 
     template <typename T_ = T, typename... Args,
         typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>>
-    compressed_pair_element(Args&&... args) noexcept(std::is_nothrow_constructible<T_, Args&&...>::value)
+    compressed_pair_element(Args&&... args)
+        noexcept(std::is_nothrow_constructible<T_, Args&&...>::value)
         : T(std::forward<Args>(args)...) {
     }
 
     template <typename T_ = T, typename K, typename... Args,
         typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<K>, Args&&...>::value>>
-    compressed_pair_element(std::initializer_list<K> il, Args&&... args) noexcept(std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value) 
+    compressed_pair_element(std::initializer_list<K> il, Args&&... args)
+        noexcept(std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value)
         : T(il, std::forward<Args>(args)...) {
     }
 
@@ -116,15 +118,18 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
         return *this; 
     }
 
-    volatile reference_type get() volatile noexcept {
+    reference_type get() volatile noexcept {
         return *this;
     }
 
-    volatile const_reference_type get() const volatile noexcept {
+    const_reference_type get() const volatile noexcept {
         return *this;
     }
 
-    void swap(compressed_pair_element& element) noexcept { return; }
+    void swap(compressed_pair_element& element) noexcept {
+        using std::swap;
+        swap(*this, element);
+    }
 };
 
 template <typename _A, typename _B>
@@ -181,9 +186,11 @@ public:
         return static_cast<const _base1&>(*this).get();
     }
 
-    template <typename = std::enable_if_t<conjunction_v<is_swappable<_A>, is_swappable<_B>>>>
+    template <typename A__ = _A, typename B__ = _B,
+            typename = std::enable_if_t<conjunction_v<is_swappable<A__>, is_swappable<B__>>>>
     void swap(compressed_pair& __x) noexcept(
-        noexcept(static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x))) && noexcept(static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x))))
+        noexcept(static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x)))
+        && noexcept(static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x))))
     {
         static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x));
         static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x));

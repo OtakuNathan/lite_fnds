@@ -11,6 +11,14 @@
 #include "../task/task_wrapper.h"
 #include "flow_blueprint.h"
 
+#if defined(__GNUC__) || defined(__clang__)
+#define LIKELY(x) __builtin_expect(!!(x), 1)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define LIKELY(x) (x)
+#define UNLIKELY(x) (x)
+#endif
+
 namespace lite_fnds {
     enum class cancel_kind {
         soft,
@@ -66,7 +74,7 @@ namespace lite_fnds {
         }
     };
 
-    template<typename I_t, typename O_t, typename... Nodes>
+    template<typename I_t, typename O_t, typename ... Nodes>
     struct flow_runner {
         static constexpr std::size_t node_count = sizeof ...(Nodes);
         static_assert(node_count > 0, "attempting to run a empty blueprint");
@@ -79,11 +87,9 @@ namespace lite_fnds {
         using bp_ptr = std::shared_ptr<bp_t>;
         using controller_ptr = std::shared_ptr<flow_controller>;
         using storage_t = typename bp_t::storage_t;
-
     private:
         controller_ptr controller;
         bp_ptr bp;
-        using self_type = flow_runner;
 
     public:
         flow_runner() = delete;
@@ -97,79 +103,66 @@ namespace lite_fnds {
             return controller;
         }
 
-        template <typename In, 
+        template <typename In,
             std::enable_if_t<std::is_convertible<In, typename I_t::value_type>::value>* = nullptr>
         void operator()(In &&in) noexcept {
             if (!bp) {
                 return;
             }
-
             step<node_count - 1>::run(*this, I_t(value_tag, std::forward<In>(in)));
         }
-
     private:
         template <std::size_t Index>
         struct step {
-            template <typename In>
-            static void run(flow_runner &self, In &&in) noexcept {
+            template <typename param_t>
+            static void run(flow_runner &self, param_t &&in) noexcept {
                 using node_t = std::tuple_element_t<Index, storage_t>;
-                using is_ctrl = flow_impl::is_control_node_t<node_t>;
-                using is_last_node = flow_impl::is_end_node_t<node_t>;
-
                 using node_i_t = typename node_t::I_t;
                 using error_type = typename node_i_t::error_type;
 
-                if (Index != 0 && self.controller->is_force_canceled()) {
+                if (UNLIKELY(self.controller->is_force_canceled())) {
                     using end_node_t = std::tuple_element_t<0, storage_t>;
                     using end_in_t = typename end_node_t::I_t;
                     using end_err_t = typename end_in_t::error_type;
-
-                    end_in_t cancel_in(error_tag, cancel_error<end_err_t>::make(cancel_kind::hard));
-                    step<0>::run(self, std::move(cancel_in));
+                    step<0>::run(self,
+                                 end_in_t(error_tag, cancel_error<end_err_t>::make(cancel_kind::hard)));
                     return;
                 }
 
-                if (Index != 0 && self.controller->is_soft_canceled()) {
-                    dispatch(is_ctrl{}, is_last_node{}, self,
+                auto &node = std::get<Index>(self.bp->nodes_);
+                using is_ctrl = flow_impl::is_control_node_t<node_t>;
+                if (UNLIKELY(self.controller->is_soft_canceled())) {
+                    dispatch(is_ctrl{}, node, self,
                              node_i_t(error_tag, cancel_error<error_type>::make(cancel_kind::soft)));
                     return;
                 }
 
-                dispatch(is_ctrl{}, is_last_node{}, self, std::forward<In>(in));
+                dispatch(is_ctrl{}, node, self, std::forward<param_t>(in));
             }
-
         private:
-            template<typename In>
+            template <typename node_t, typename param_t>
             static void dispatch(std::false_type /*calc*/,
-                                 std::false_type, // has next
-                                 flow_runner &self, In &&in) noexcept {
-                auto &node = std::get<Index>(self.bp->nodes_);
-                step<Index - 1>::run(self, node.f(std::forward<In>(in)));
+                                 node_t& node, flow_runner &self, param_t &&in) noexcept {
+                step<Index - 1>::run(self, node.f(std::forward<param_t>(in)));
             }
 
-            template<typename In>
-            static void dispatch(std::false_type /*calc*/,
-                                 std::true_type /*last*/,
-                                 flow_runner &self, In &&in) noexcept {
-                (void) self;
-                auto &node = std::get<Index>(self.bp->nodes_);
-                (void) node.f(std::forward<In>(in));
-            }
-
-            template<typename In>
+            template <typename node_t, typename param_t>
             static void dispatch(std::true_type /*control*/,
-                                 std::false_type /*has_next*/,
-                                 flow_runner &self, In &&in) noexcept {
-                auto &node = std::get<Index>(self.bp->nodes_);
-
-                auto bp = self.bp;
-                auto controller = self.controller;
-                node.p(task_wrapper_sbo([bp = std::move(bp),
-                                         controller = std::move(controller),
-                                         in = std::forward<In>(in)]() mutable noexcept {
+                                 node_t& node, flow_runner &self, param_t &&in) noexcept {
+                node.p(task_wrapper_sbo([bp = self.bp,
+                                                controller = self.controller,
+                                                in = std::forward<param_t>(in)]() mutable noexcept {
                     flow_runner next_runner(std::move(bp), std::move(controller));
                     step<Index - 1>::run(next_runner, std::move(in));
                 }));
+            }
+        };
+
+        template <>
+        struct step <0> {
+            template <typename param_t>
+            static void run(flow_runner& self, param_t &&param) noexcept {
+                std::get<0>(self.bp->nodes_).f(std::forward<param_t>(param));
             }
         };
     };
@@ -178,6 +171,75 @@ namespace lite_fnds {
     auto make_runner(std::shared_ptr<flow_impl::flow_blueprint<I_t, O_t, Nodes...>> bp,
         std::shared_ptr<flow_controller> ctl = nullptr) noexcept {
         return flow_runner<I_t, O_t, Nodes...>(std::move(bp), std::move(ctl));
+    }
+
+    // one-short runner, consume blue_print.
+    template <typename I_t, typename O_t, typename... Nodes>
+    struct flow_fast_runner {
+        static constexpr std::size_t node_count = sizeof ...(Nodes);
+        static_assert(node_count > 0, "attempting to run a empty blueprint");
+
+        using bp_t = flow_impl::flow_blueprint<I_t, O_t, Nodes...>;
+
+        using first_node_t = std::tuple_element_t<0, typename bp_t::storage_t>;
+        static_assert(flow_impl::is_end_node_t<first_node_t>::value, "A valid blueprint must end with an end");
+
+        using storage_t = typename bp_t::storage_t;
+    private:
+        bp_t bp;
+
+    public:
+        flow_fast_runner() = delete;
+
+        explicit flow_fast_runner(bp_t&& bp_)
+            noexcept(std::is_nothrow_move_constructible<bp_t>::value)
+            : bp(std::move(bp_)) {
+        }
+
+        template <typename In,
+                std::enable_if_t<std::is_convertible<In, typename I_t::value_type>::value>* = nullptr>
+        void operator()(In &&in) noexcept {
+            step<node_count - 1>::run(*this, I_t(value_tag, std::forward<In>(in)));
+        }
+    private:
+        template <std::size_t Index>
+        struct step {
+            template <typename param_t>
+            static void run(flow_fast_runner &self, param_t &&in) noexcept {
+                using node_t = std::tuple_element_t<Index, storage_t>;
+                dispatch(flow_impl::is_control_node_t<node_t>{},
+                         std::get<Index>(self.bp.nodes_), self, std::forward<param_t>(in));
+            }
+        private:
+            template <typename node_t, typename param_t>
+            static void dispatch(std::false_type /*calc*/,
+                                 node_t& node, flow_fast_runner &self, param_t &&in) noexcept {
+                step<Index - 1>::run(self, node.f(std::forward<param_t>(in)));
+            }
+
+            template <typename node_t, typename param_t>
+            static void dispatch(std::true_type /*control*/,
+                                 node_t& node, flow_fast_runner &self, param_t &&in) noexcept {
+                node.p(task_wrapper_sbo([bp = std::move(self.bp),
+                                         in = std::forward<param_t>(in)]() mutable noexcept {
+                    flow_fast_runner next_runner(std::move(bp));
+                    step<Index - 1>::run(next_runner, std::move(in));
+                }));
+            }
+        };
+
+        template <>
+        struct step <0> {
+            template <typename param_t>
+            static void run(flow_fast_runner& self, param_t &&param) noexcept {
+                std::get<0>(self.bp.nodes_).f(std::forward<param_t>(param));
+            }
+        };
+    };
+
+    template<typename I_t, typename O_t, typename... Nodes>
+    auto make_fast_runner(flow_impl::flow_blueprint<I_t, O_t, Nodes...>&& bp) noexcept {
+        return flow_fast_runner<I_t, O_t, Nodes...>(std::move(bp));
     }
 } // namespace lite_fnds
 
