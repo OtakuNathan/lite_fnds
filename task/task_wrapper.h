@@ -96,6 +96,14 @@ namespace lite_fnds {
         using base::swap;
         using base::clear;
 
+        explicit operator bool() const noexcept {
+            return this->_vtable != nullptr;
+        }
+
+        bool empty() const noexcept {
+            return !*this;
+        }
+
         task_wrapper(task_wrapper&& rhs) noexcept : base() {
             if (rhs._vtable) {
                 // use safe_relocate: always noexcept

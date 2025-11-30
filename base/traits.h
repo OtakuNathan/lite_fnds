@@ -9,6 +9,19 @@
 #include <memory>
 #include <cassert>
 
+#if __cplusplus >= 202002L
+#  define LIKELY_IF(expr) if ((expr)) [[likely]]
+#  define UNLIKELY_IF(expr) if ((expr)) [[unlikely]]
+#else
+#  if defined(__GNUC__) || defined(__clang__)
+#    define LIKELY_IF(expr) if (__builtin_expect(!!(expr), 1))
+#    define UNLIKELY_IF(expr) if (__builtin_expect(!!(expr), 0))
+#else
+#    define LIKELY_IF(expr)   if (expr)
+#    define UNLIKELY_IF(expr) if (expr)
+#endif
+#endif
+
 namespace lite_fnds {
     static constexpr size_t CACHE_LINE_SIZE = 64;
 

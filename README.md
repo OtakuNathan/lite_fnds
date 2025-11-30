@@ -15,7 +15,7 @@ This project started as a personal experiment to understand the fundamentals of 
 | **Concurrency** | `spsc_queue`, `mpsc_queue`, `mpmc_queue` |
 | **Utility** | `compressed_pair`, `callable_wrapper`, `static_list` |
 | **Task** | `task_core`, `future_task`, `task_wrapper` |
-| **Flow** | `flow_blueprint`, `flow_node`, `flow_runner` |
+| **Flow** | `flow_blueprint`, `flow_node`, `flow_runner` `flow_aggregator` |
 
 ---
 
@@ -38,7 +38,7 @@ A blueprint is simply:
 
 ```cpp
 auto bp = make_blueprint<int>()
-        | map(...)
+        | transform(...)
         | then(...)
         | on_error(...)
         | via(...)
@@ -110,7 +110,7 @@ int main(int argc, char *argv[]) {
 
     using lite_fnds::make_blueprint;
     using lite_fnds::via;
-    using lite_fnds::map;
+    using lite_fnds::transform;
     using lite_fnds::then;
     using lite_fnds::end;
     using lite_fnds::on_error;
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
     int v = 100;
     auto bp = make_blueprint<int>()
          | via(&executor)
-         | map([&v] (int x) noexcept{
+         | transform([&v] (int x) noexcept{
              return v += 10, (double)v + x;
          })
          | then([](result_t<double, E> f) {
