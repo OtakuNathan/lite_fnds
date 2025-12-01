@@ -3,15 +3,15 @@
 
 #include <atomic>
 #include <thread>
-#include <functional>
 
+#include "utility/callable_wrapper.h"
 #include "../utility/static_list.h"
 
 namespace lite_fnds {
 struct hazard_ptr;
 
 template <typename Callable>
-using callable_t = std::function<Callable>;
+using callable_t = callable_wrapper<Callable>;
 
 struct hp_mgr {
 public:
@@ -98,8 +98,8 @@ public:
         retire_list_node(const retire_list_node&) = delete;
         retire_list_node& operator=(const retire_list_node&) = delete;
 
-        retire_list_node(retire_list_node&&) = default;
-        retire_list_node& operator=(retire_list_node&&) = default;
+        retire_list_node(retire_list_node&&) noexcept = default;
+        retire_list_node& operator=(retire_list_node&&) noexcept  = default;
 
         template <typename Deleter>
         retire_list_node(void* p, Deleter _deleter)
@@ -108,7 +108,7 @@ public:
         }
     };
 
-    static static_list<retire_list_node, max_slot> retire_list;
+    static static_list<retire_list_node, max_slot << 1> retire_list;
 
     static void sweep_and_reclaim() noexcept {
         for (inplace_t<retire_list_node> node = retire_list.pop(); 
@@ -129,8 +129,8 @@ public:
             delete p;
         } else {
             // append a new node to reclaim list
-            retire_list.emplace(p, [](void* p) noexcept {
-                delete static_cast<T*>(p);
+            retire_list.emplace(p, [](void* _p) noexcept {
+                delete static_cast<T*>(_p);
             });
         }
     }
@@ -158,7 +158,7 @@ public:
     static hazard_record record[max_slot];
     friend struct hazard_ptr;
 
-    static hazard_record* acquire_slot(std::thread::id tid) noexcept {
+    static hazard_record* acquire_slot(const std::thread::id tid) noexcept {
         for (int i = 0; i < max_slot; ++i) {
             auto exp = std::thread::id();
             if (record[i].tid.compare_exchange_strong(exp, tid,
@@ -208,7 +208,7 @@ public:
         return *this;
     }
 
-    bool available() noexcept {
+    bool available() const noexcept {
         return slot != nullptr;
     }
 
@@ -221,7 +221,9 @@ public:
         swap(slot, rhs.slot);
     }
 
+    // you must check if the hp is available before calling protect
     void protect(const void* p) noexcept {
+        assert(slot && "hazard_ptr slot exhausted, increase max_slot or reduce concurrent HP usage");
         slot->ptr.store(p, std::memory_order_release);
     }
 
@@ -252,7 +254,7 @@ public:
     }
 };
 
-void swap(hazard_ptr& lhs, hazard_ptr& rhs) noexcept {
+inline void swap(hazard_ptr& lhs, hazard_ptr& rhs) noexcept {
     lhs.swap(rhs);
 }
 

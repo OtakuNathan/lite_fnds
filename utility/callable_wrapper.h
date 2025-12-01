@@ -18,7 +18,7 @@ namespace lite_fnds {
 namespace callable_handle_impl {
     template <typename R, typename ... Args>
     struct callable_vtable : basic_vtable {
-        R (*call)(const void*, Args&&...);
+        R (*call)(const void*, Args...);
 
         constexpr callable_vtable(
             fn_copy_construct_t* fcopy,
@@ -56,7 +56,7 @@ private:
 
     template <typename T, bool sbo_enabled>
     struct callable_vfns {
-        static R call(const void* p, Args&&... args) {
+        static R call(const void* p, Args... args) {
             return (*tr_ptr<const T, sbo_enabled>(p))(std::forward<Args>(args)...);
         }
 
@@ -71,7 +71,7 @@ private:
         }
     };
     
-    result_t<R, std::exception_ptr> do_nothrow(std::true_type, Args&&... args) const noexcept {
+    result_t<R, std::exception_ptr> do_nothrow(std::true_type, Args... args) const noexcept {
         try {
             this->operator()(std::forward<Args>(args)...);
             return result_t<R, std::exception_ptr>(value_tag);
@@ -80,7 +80,7 @@ private:
         }
     }
 
-    result_t<R, std::exception_ptr> do_nothrow(std::false_type, Args&&... args) const noexcept {
+    result_t<R, std::exception_ptr> do_nothrow(std::false_type, Args... args) const noexcept {
         try {
             return result_t<R, std::exception_ptr>(value_tag, this->operator()(std::forward<Args>(args)...));
         } catch (...) {
@@ -131,14 +131,14 @@ public:
         return this->_vtable != nullptr;
     }
 
-    R operator()(Args&&... args) const {
+    R operator()(Args... args) const {
         if (!this->_vtable) {
             throw std::bad_function_call();
         }
         return static_cast<const callable_vtable*>(this->_vtable)->call(this->_data, std::forward<Args>(args)...);
     }
 
-    result_t<R, std::exception_ptr> nothrow_call(Args&&... args) const noexcept {
+    result_t<R, std::exception_ptr> nothrow_call(Args... args) const noexcept {
         return do_nothrow(std::is_void<R>{}, std::forward<Args>(args)...);
     }
 };

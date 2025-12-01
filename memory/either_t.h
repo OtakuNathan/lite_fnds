@@ -525,7 +525,7 @@ namespace lite_fnds {
 			std::enable_if_t<conjunction_v<std::is_constructible<T_, Args&&...>, std::is_nothrow_move_constructible<U_>>>* = nullptr>
 		void emplace_first(Args &&... args)
 			noexcept(conjunction_v<
-					std::integral_constant<bool, noexcept(opt::emplace_at(std::addressof(this->_data.first), std::forward<Args>(args)...))>,
+					std::integral_constant<bool, noexcept(opt::emplace_at(static_cast<T_*>(nullptr), std::forward<Args>(args)...))>,
 					std::is_nothrow_constructible<T_, Args&&...>>) {
 			if (this->has_first()) {
 				opt::emplace_at(std::addressof(this->_data.first), std::forward<Args>(args)...);
@@ -548,7 +548,7 @@ namespace lite_fnds {
 				negation<std::is_nothrow_move_constructible<U_>> > >* = nullptr>
 		void emplace_first(Args &&... args)
 			noexcept(conjunction_v<
-				std::integral_constant<bool, noexcept(opt::emplace_at(std::addressof(this->_data.first),
+				std::integral_constant<bool, noexcept(opt::emplace_at(static_cast<T_*>(nullptr),
 				                                                      std::forward<Args>(args)...))>,
 				std::is_nothrow_constructible<T_, Args &&...> >) {
 			if (this->has_first()) {
@@ -571,7 +571,7 @@ namespace lite_fnds {
 			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>, std::is_nothrow_move_constructible<U_>>>* = nullptr>
 		void emplace_second(Args &&... args)
 			noexcept(conjunction_v<std::is_nothrow_destructible<T_>, std::is_nothrow_constructible<U_, Args&&...>,
-			         std::integral_constant<bool, noexcept(opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...))>>) {
+			         std::integral_constant<bool, noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))>>) {
 			if (!this->has_first()) {
 				opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
 				return;
@@ -587,7 +587,7 @@ namespace lite_fnds {
 			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>, negation<std::is_nothrow_move_constructible<U_>>>>* = nullptr>
 		void emplace_second(Args &&... args)
 			noexcept(conjunction_v<std::is_nothrow_destructible<T_>, std::is_nothrow_constructible<U_, Args&&...>,
-				 std::integral_constant<bool, noexcept(opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...))>>) {
+				 std::integral_constant<bool, noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))>>) {
 			if (!this->has_first()) {
 				opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
 				return;
@@ -606,8 +606,8 @@ namespace lite_fnds {
 		void assign(either_storage_base<T_, U_>&& rhs)
 			noexcept(conjunction_v<
 				std::is_nothrow_constructible<T, T_&&>, std::is_nothrow_constructible<U, U_&&>,
-				std::integral_constant<bool, noexcept(this->emplace_first(std::declval<T&&>()))>,
-				std::integral_constant<bool, noexcept(this->emplace_second(std::declval<U&&>()))>>) {
+				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_first(std::declval<T&&>()))>,
+				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
             if (static_cast<const void*>(this) == static_cast<const void*>(std::addressof(rhs))) {
                 return;
             }
@@ -628,7 +628,6 @@ namespace lite_fnds {
 				std::is_nothrow_constructible<T, const T_&>, std::is_nothrow_constructible<U, const U_&>,
 				disjunction<std::is_nothrow_copy_constructible<T_>, std::is_nothrow_copy_assignable<T_>>,
 				disjunction<std::is_nothrow_copy_constructible<U_>, std::is_nothrow_copy_assignable<U_>>>) {
-            auto* self = static_cast<const either_storage_base<T, U>*>(this);
             if (static_cast<const void*>(this) == static_cast<const void*>(std::addressof(rhs))) {
                 return;
             }
@@ -685,7 +684,7 @@ namespace lite_fnds {
 
 		template <typename U_ = U, typename ... Args, std::enable_if_t<std::is_constructible<U_, Args&&...>::value>* = nullptr>
 		void emplace_second(Args &&... args)
-			noexcept(noexcept(opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...))) {
+			noexcept(noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))) {
 			if (this->has_first()) {
 				opu::construct_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
 				this->_state = either_state::second;
@@ -697,7 +696,7 @@ namespace lite_fnds {
 		template <typename U_, std::enable_if_t<std::is_constructible<U, U_&&>::value>* = nullptr>
 		void assign(either_storage_base<void, U_>&& rhs)
 			noexcept(conjunction_v<std::is_nothrow_constructible<U, U_&&>,
-				std::integral_constant<bool, noexcept(this->emplace_second(std::declval<U&&>()))>>) {
+				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
 			if (reinterpret_cast<const void*>(this) == reinterpret_cast<const void*>(&rhs)) {
 				return;
 			}
@@ -1085,7 +1084,7 @@ namespace lite_fnds {
 			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
 				std::is_move_constructible<T_>, can_strong_replace<T_>> >* = nullptr>
 		either_t& operator=(std::add_rvalue_reference_t<std::decay_t<T_>> t)
-			noexcept(noexcept(this->emplace_first(std::declval<std::decay_t<T_>&&>()))) {
+			noexcept(noexcept(std::declval<either_t&>().emplace_first(std::declval<std::decay_t<T_>&&>()))) {
 			this->emplace_first(std::move(t));
 			return *this;
 		}
@@ -1094,7 +1093,7 @@ namespace lite_fnds {
 			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
 				std::is_copy_constructible<T_>, can_strong_replace<T_>>>* = nullptr>
 		either_t& operator=(std::add_lvalue_reference_t<std::decay_t<const T_>> t)
-			noexcept(noexcept(this->emplace_first(std::declval<const std::decay_t<T_>&>()))) {
+			noexcept(noexcept(std::declval<either_t&>().emplace_first(std::declval<const std::decay_t<T_>&>()))) {
 			this->emplace_first(t);
 			return *this;
 		}

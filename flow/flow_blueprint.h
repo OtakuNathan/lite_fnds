@@ -11,7 +11,23 @@
 namespace lite_fnds {
 
 namespace flow_impl {
+#if defined(__clang__)
+    static constexpr size_t MAX_ZIP_N = 2;
+#elif defined(__GNUC__)
+    static constexpr size_t MAX_ZIP_N = 2;
+#elif defined(_MSC_VER)
     static constexpr size_t MAX_ZIP_N = 8;
+#else
+    static constexpr size_t MAX_ZIP_N = 2;
+#endif
+
+#if defined (__GNUC__) || defined(__clang__)
+#  define LFNDS_ALWAYS_INLINE __attribute__((always_inline)) inline
+#elif defined(_MSC_VER)
+#  define LFNDS_ALWAYS_INLINE  __forceinline
+#else
+#  define LFNDS_ALWAYS_INLINE inline
+#endif
 
     enum class flow_node_type {
         flow_node_calc,
@@ -88,12 +104,14 @@ namespace flow_impl {
         }
 
         template <typename X>
-        inline auto operator()(X&& x) noexcept {
+        LFNDS_ALWAYS_INLINE auto operator()(X&& x)
+            noexcept(noexcept(std::declval<G_T&>()(std::declval<F_T&>()(std::forward<X>(x))))) {
             return fg.second()(fg.first()(std::forward<X>(x)));
         }
 
         template <typename X>
-        inline auto operator()(X&& x) const noexcept {
+        LFNDS_ALWAYS_INLINE auto operator()(X&& x) const
+            noexcept(noexcept(std::declval<G_T&>()(std::declval<F_T&>()(std::forward<X>(x))))) {
             return fg.second()(fg.first()(std::forward<X>(x)));
         }
 
@@ -111,8 +129,8 @@ namespace flow_impl {
     }
 
     template <typename F, typename G, typename... Os>
-    auto zip_callables(F f, G g, Os... os) {
-        return zip_callables(zip_callables(std::move(f), std::move(g)), std::move(os)...);
+    auto zip_callables(F&& f, G&& g, Os&&... os) {
+        return zip_callables(zip_callables(std::forward<F>(f), std::forward<G>(g)), std::forward<Os>(os)...);
     }
 
     // flow calc
@@ -346,5 +364,6 @@ namespace flow_impl {
     }
 }
 
+#undef LFNDS_ALWAYS_INLINE
 }
 #endif

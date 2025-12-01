@@ -80,7 +80,9 @@ private:
 
 template <typename Callable, typename... Args>
 auto make_future_task(Callable&& callable, Args&&... args) 
-    noexcept(std::is_nothrow_constructible<std::decay_t<Callable>, std::decay_t<Args>...>::value)
+    noexcept(std::is_nothrow_constructible<
+        future_task<std::decay_t<Callable>, std::decay_t<Args>...>,
+        Callable&&, Args&&...>::value)
     -> future_task<std::decay_t<Callable>, std::decay_t<Args>...> {
     return future_task<std::decay_t<Callable>, std::decay_t<Args>...>(
         std::forward<Callable>(callable), std::forward<Args>(args)...);

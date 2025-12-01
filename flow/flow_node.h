@@ -42,7 +42,7 @@ namespace lite_fnds {
             static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F, F_I>;
                 auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable noexcept {
-                    if (in.has_value()) {
+                    LIKELY_IF (in.has_value()) {
                         return call<F_O, E, F>(std::is_void<F_O> {}, std::false_type{}, f, std::move(in).value());
                     }
                     return result_t<F_O, E>(error_tag, std::move(in).error());
@@ -54,8 +54,8 @@ namespace lite_fnds {
                 std::enable_if_t<std::is_void<F_I>::value>* = nullptr>
             static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F>;
-                auto wrapper = [f = std::move(self.f)](result_t<F_I, E> in) mutable noexcept {
-                    if (in.has_value()) {
+                auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable noexcept {
+                    LIKELY_IF (in.has_value()) {
                         return call<F_O, E, F>(std::is_void<F_O> {}, std::true_type{}, f, std::move(in));
                     }
                     return result_t<F_O, E>(error_tag, std::move(in).error());
@@ -86,7 +86,7 @@ namespace lite_fnds {
             static auto make(then_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 auto wrapper = [f = std::move(self.f)](F_I&& in) noexcept {
                     try {
-                        if (in.has_value()) {
+                        LIKELY_IF (in.has_value()) {
                             return f(std::move(in));
                         }
                         return F_O(error_tag, std::move(in).error());
@@ -119,11 +119,10 @@ namespace lite_fnds {
             template <typename F_I, typename F_O>
             static auto make(error_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 auto wrapper = [f = std::move(self.f)](F_I&& in) noexcept {
-
+                    LIKELY_IF (in.has_value()) {
+                        return F_O(value_tag, std::move(in).value());
+                    }
                     try {
-                        if (in.has_value()) {
-                            return F_O(value_tag, std::move(in).value());
-                        }
                         return f(std::move(in));
                     } catch (...) {
                         return F_O(error_tag, std::current_exception());
@@ -153,7 +152,7 @@ namespace lite_fnds {
             static auto make(exception_catch_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using R = result_t<F_O, std::exception_ptr>;
                 auto wrapper = [f = std::move(self.f)](F_I&& in) mutable noexcept {
-                    if (in.has_value()) {
+                    LIKELY_IF (in.has_value()) {
                         return R(value_tag, std::move(in).value());
                     }
 

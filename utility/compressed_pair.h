@@ -21,9 +21,11 @@ namespace lite_fnds {
         private assign_delete_base<T, std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value> {
     static_assert(!std::is_void<T>::value, "T must not be void");
 
-    using reference_type = T&;
     using value_type = T;
+    using reference_type = T&;
     using const_reference_type = const T&;
+    using volatile_reference_type = T volatile&;
+    using const_volatile_reference_type = T const volatile&;
 
     compressed_pair_element(const compressed_pair_element& rhs) 
         noexcept(std::is_nothrow_copy_constructible<T>::value) = default;
@@ -58,12 +60,12 @@ namespace lite_fnds {
     const_reference_type get() const noexcept { 
         return _value; 
     }
-
-    volatile reference_type get() volatile noexcept {
+            
+    volatile_reference_type get() volatile noexcept {
         return _value;
     }
 
-    volatile const_reference_type get() const volatile noexcept {
+    const_volatile_reference_type get() const volatile noexcept {
         return _value;
     }
 
@@ -82,11 +84,14 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
     private ctor_delete_base<T, std::is_copy_constructible<T>::value, std::is_move_constructible<T>::value>,
     private assign_delete_base<T, std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value> {
     static_assert(!std::is_void<T>::value, "T must not be void");
-    using reference_type = T&;
+        
     using value_type = T;
+    using reference_type = T&;
     using const_reference_type = const T&;
-
-    compressed_pair_element(const compressed_pair_element& rhs) 
+    using volatile_reference_type = T volatile&;
+    using const_volatile_reference_type = T const volatile&;
+        
+    compressed_pair_element(const compressed_pair_element& rhs)
         noexcept(std::is_nothrow_copy_constructible<T>::value) = default;
     compressed_pair_element(compressed_pair_element&& rhs) 
         noexcept(std::is_nothrow_move_constructible<T>::value) = default;
@@ -111,24 +116,24 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
     }
 
     reference_type get() noexcept { 
-        return *this; 
+        return static_cast<T&>(*this);
     }
 
     const_reference_type get() const noexcept { 
-        return *this; 
+        return static_cast<T const&>(*this);
+    }
+    
+    volatile_reference_type get() volatile noexcept {
+        return static_cast<T volatile&>(*this);
     }
 
-    reference_type get() volatile noexcept {
-        return *this;
-    }
-
-    const_reference_type get() const volatile noexcept {
-        return *this;
+    const_volatile_reference_type get() const volatile noexcept {
+        return static_cast<T const volatile&>(*this);
     }
 
     void swap(compressed_pair_element& element) noexcept {
         using std::swap;
-        swap(*this, element);
+        swap(static_cast<T&>(*this), static_cast<T&>(element));
     }
 };
 
@@ -189,8 +194,8 @@ public:
     template <typename A__ = _A, typename B__ = _B,
             typename = std::enable_if_t<conjunction_v<is_swappable<A__>, is_swappable<B__>>>>
     void swap(compressed_pair& __x) noexcept(
-        noexcept(static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x)))
-        && noexcept(static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x))))
+        noexcept(std::declval<_base0&>().swap(std::declval<_base0&>()))
+        && noexcept(std::declval<_base1&>().swap(std::declval<_base1&>())))
     {
         static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x));
         static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x));

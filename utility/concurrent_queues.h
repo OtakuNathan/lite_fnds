@@ -11,7 +11,7 @@ namespace lite_fnds {
 template <typename T, size_t capacity>
 struct spsc_queue {
     static_assert(std::is_nothrow_move_constructible<T>::value, 
-        "T must be nothrow move constructible or nothrow move assignable");
+        "T must be nothrow move constructible");
     static_assert((capacity & (capacity - 1)) == 0, "capacity must be power of 2");
 
 protected:

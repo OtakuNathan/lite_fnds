@@ -88,13 +88,17 @@ namespace lite_fnds {
             typename = std::enable_if_t<
                 !std::is_same<T, task_wrapper>::value && is_compatible<T>::value>>
         explicit task_wrapper(U&& rhs) 
-            noexcept(noexcept(this->template emplace<T>(std::forward<U>(rhs)))) {
+            noexcept(noexcept(std::declval<task_wrapper&>().template emplace<T>(std::forward<U>(rhs)))) {
             this->template emplace<T>(std::forward<U>(rhs));
         }
 
         using base::emplace;
         using base::swap;
         using base::clear;
+
+        bool empty() const noexcept {
+            return !this->has_value();
+        }
 
         task_wrapper(task_wrapper&& rhs) noexcept : base() {
             if (rhs._vtable) {

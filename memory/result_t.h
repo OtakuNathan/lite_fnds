@@ -178,7 +178,7 @@ namespace lite_fnds {
             std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
                 std::is_move_constructible<T_>, can_strong_replace<T_>> >* = nullptr>
         result_t& operator=(std::add_rvalue_reference_t<std::decay_t<T_>> t)
-            noexcept(noexcept(this->_as_base() = std::move(t))) {
+            noexcept(noexcept(std::declval<base&>() = std::move(t))) {
             this->_as_base() = std::move(t);
             return *this;
         }
@@ -187,21 +187,21 @@ namespace lite_fnds {
             std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
                 std::is_copy_constructible<T_>, can_strong_replace<T_>>>* = nullptr>
         result_t& operator=(std::add_lvalue_reference_t<std::decay_t<const T_>> t)
-            noexcept(noexcept(this->_as_base() = t)) {
+            noexcept(noexcept(std::declval<base&>() = t)) {
             this->_as_base() = t;
             return *this;
         }
 
         template <typename F_ = error_t<E>, std::enable_if_t<std::is_move_constructible<F_>::value >* = nullptr>
         result_t& operator=(std::add_rvalue_reference_t<std::decay_t<F_> > err)
-            noexcept(noexcept(this->_as_base() = std::move(err))) {
+            noexcept(noexcept(std::declval<base&>() = std::move(err))) {
             this->_as_base() = std::move(err);
             return *this;
         }
 
         template <typename F_ = error_t<E>, std::enable_if_t<std::is_copy_constructible<F_>::value>* = nullptr>
         result_t& operator=(std::add_lvalue_reference_t<std::decay_t<const F_>> err)
-            noexcept(noexcept(this->_as_base() = err)) {
+            noexcept(noexcept(std::declval<base&>() = err)) {
             this->_as_base() = err;
             return *this;
         }
