@@ -5,9 +5,9 @@
 #include <thread>
 #include "../base/traits.h"
 #include "../memory/inplace_t.h"
+#include "yield.h"
 
 namespace lite_fnds {
-
 template <typename T, size_t capacity>
 struct spsc_queue {
     static_assert(std::is_nothrow_move_constructible<T>::value, 
@@ -53,6 +53,7 @@ public:
        return true;
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename... Args,
         std::enable_if_t <conjunction_v<
         negation<std::is_nothrow_constructible<T_, Args&&...>>, std::is_constructible<T_, Args&&...>>>* = nullptr>
@@ -60,6 +61,7 @@ public:
         T tmp(std::forward<Args>(args)...);
         return try_emplace(std::move(tmp));
     }
+#endif
 
     bool try_emplace(T&& object) noexcept {
         auto t = _t.load(std::memory_order_relaxed);
@@ -74,6 +76,7 @@ public:
         return true;
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename ... Args, 
         typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>>
     void wait_and_emplace(Args&&... args) 
@@ -81,9 +84,10 @@ public:
         T tmp(std::forward<Args>(args)...);
         wait_and_emplace(std::move(tmp));
     }
+#endif
 
     void wait_and_emplace(T&& object) noexcept {
-        for (;; std::this_thread::yield()) {
+        for (;;yield()) {
             auto t = _t.load(std::memory_order_relaxed);
             auto h = _h.load(std::memory_order_acquire);
             if (t - h == capacity) {
@@ -114,7 +118,7 @@ public:
     }
 
     T wait_and_pop() noexcept {
-        for (;;std::this_thread::yield()) {
+        for (;;yield()) {
             auto h = _h.load(std::memory_order_relaxed);
             auto t = _t.load(std::memory_order_acquire);
             if (h == t) {
@@ -208,11 +212,12 @@ public:
                 return true;
             }
 
-            std::this_thread::yield();
+            yield();
         }
         return false;
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename... Args,
         std::enable_if_t<conjunction_v<
             negation<std::is_nothrow_constructible<T_, Args&&...>>, std::is_constructible<T_, Args&&...>>>* = nullptr>
@@ -221,6 +226,7 @@ public:
         T tmp(std::forward<Args>(args...));
         return try_emplace(std::move(tmp));
     }
+#endif
 
     bool try_emplace(T&& object) noexcept {
         constexpr int max_retry = 8;
@@ -239,8 +245,7 @@ public:
                 slot.ready.store(1, std::memory_order_release);
                 return true;
             }
-
-            std::this_thread::yield();
+            yield();
         }
         return false;
     }
@@ -248,9 +253,7 @@ public:
     template <typename T_ = T, typename... Args,
         std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
     void wait_and_emplace(Args&&... args) noexcept {
-        constexpr int max_retry = 8;
-
-        for (;; std::this_thread::yield()) {
+        for (;; yield()) {
             size_t t = _t.load(std::memory_order_relaxed);
             size_t h = _h.load(std::memory_order_acquire);
 
@@ -267,20 +270,20 @@ public:
         }
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename... Args,
         std::enable_if_t<conjunction_v<
             negation<std::is_nothrow_constructible<T_, Args&&...>>, 
             std::is_constructible<T_, Args&&...>>>* = nullptr>
-    void wait_and_emplace(Args&&... args) 
+    void wait_and_emplace(Args&&... args)
         noexcept(std::is_nothrow_constructible<T, Args&&...>::value) {
         T_ tmp(std::forward<Args>(args)...);
         wait_and_emplace(std::move(tmp));
     }
+#endif
 
     void wait_and_emplace(T&& object) noexcept {
-        constexpr int max_retry = 8;
-
-        for (;; std::this_thread::yield()) {
+        for (;; yield()) {
             size_t t = _t.load(std::memory_order_relaxed);
             size_t h = _h.load(std::memory_order_acquire);
 
@@ -323,7 +326,7 @@ public:
 
             slot_t& slot = this->_data[h & MASK];
             if (!slot.ready.load(std::memory_order_acquire)) {
-                std::this_thread::yield();
+                yield();
                 continue;
             }
 
@@ -392,7 +395,7 @@ public:
     mpmc_queue& operator=(mpmc_queue&&) = delete;
 
     void wait_and_emplace(T&& obj) noexcept {
-        for (;; std::this_thread::yield()) {
+        for (;; yield()) {
             auto i = _t.load(std::memory_order_relaxed);
             auto& slot = this->m_q[i & bit_msk];
             auto seq = slot.sequence.load(std::memory_order_acquire), _seq = (i / capacity) << 1;
@@ -405,10 +408,11 @@ public:
         }
     }
 
+
     template <typename T_ = T, typename... Args,
         std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
     void wait_and_emplace(Args&&... args) noexcept {
-        for (;; std::this_thread::yield()) {
+        for (;; yield()) {
             auto i = _t.load(std::memory_order_relaxed);
             auto& slot = this->m_q[i & bit_msk];
             auto seq = slot.sequence.load(std::memory_order_acquire), _seq = (i / capacity) << 1;
@@ -421,6 +425,7 @@ public:
         }
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename... Args,
         std::enable_if_t<conjunction_v<
             negation<std::is_nothrow_constructible<T_, Args&&...>>, 
@@ -430,9 +435,10 @@ public:
         T tmp(std::forward<Args>(args)...);
         wait_and_emplace(std::move(tmp));
     }
+#endif
 
     T wait_and_pop() noexcept {
-        for (;;std::this_thread::yield()) {
+        for (;;yield()) {
             auto i = _h.load(std::memory_order_relaxed);
             auto& slot = m_q[i & bit_msk];
             auto _seq = slot.sequence.load(std::memory_order_acquire), seq = ((i / capacity) << 1) + 1;
@@ -465,6 +471,7 @@ public:
         return false;
     }
 
+
     template <typename T_ = T, typename... Args,
         std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
     bool try_emplace(Args&&... args) noexcept {
@@ -486,6 +493,7 @@ public:
         return false;
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename T_, typename... Args,
         std::enable_if_t<conjunction_v<
             negation<std::is_nothrow_constructible<T_, Args&&...>>,
@@ -516,9 +524,10 @@ public:
 
         return res;
     }
+#endif
 
     // only for approximating the size
-    size_t size() noexcept {
+    size_t size() const noexcept {
         return _t.load(std::memory_order_relaxed) - _h.load(std::memory_order_relaxed);
     }
 

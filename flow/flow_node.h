@@ -8,7 +8,11 @@ namespace lite_fnds {
     namespace flow_impl {
         template <typename F_O, typename E, typename F, typename F_I>
         result_t<F_O, E> call(std::false_type, std::false_type, F& f, F_I&& in) 
-            noexcept(is_nothrow_invocable_with<F&, F_I&&>::value) {
+            noexcept(is_nothrow_invocable_with<F&, F_I&&>::value
+            && std::is_nothrow_constructible<
+                result_t<F_O, E>,
+                decltype(value_tag),
+                invoke_result_t<F&, F_I&&>>::value) {
             return result_t<F_O, E>(value_tag, f(std::forward<F_I>(in)));
         }
 
@@ -21,7 +25,8 @@ namespace lite_fnds {
 
         template <typename F_O, typename E, typename F, typename F_I>
         result_t<F_O, E> call(std::false_type, std::true_type, F& f, F_I&&) 
-            noexcept(is_nothrow_invocable_with<F&, void>::value) {
+            noexcept(is_nothrow_invocable_with<F&, void>::value
+                && std::is_nothrow_constructible<result_t<F_O, E>, decltype(value_tag), invoke_result_t<F&>>::value) {
             return result_t<F_O, E>(value_tag, f());
         }
 
@@ -41,7 +46,8 @@ namespace lite_fnds {
                 std::enable_if_t<negation_v<std::is_void<F_I>>>* = nullptr>
             static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F, F_I>;
-                auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable noexcept {
+                auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable
+                    noexcept(noexcept(call<F_O, E, F>(std::is_void<F_O> {}, std::false_type{}, std::declval<F&>(), std::declval<F_I>()))) {
                     LIKELY_IF (in.has_value()) {
                         return call<F_O, E, F>(std::is_void<F_O> {}, std::false_type{}, f, std::move(in).value());
                     }
@@ -54,7 +60,9 @@ namespace lite_fnds {
                 std::enable_if_t<std::is_void<F_I>::value>* = nullptr>
             static auto make(transform_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 using F_O = invoke_result_t<F>;
-                auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable noexcept {
+                auto wrapper = [f = std::move(self.f)](result_t<F_I, E>&& in) mutable
+                        noexcept(noexcept(call<F_O, E, F>(std::is_void<F_O> {}, std::true_type{}, std::declval<F&>(),
+                            std::declval<result_t<F_I, E>>()))) {
                     LIKELY_IF (in.has_value()) {
                         return call<F_O, E, F>(std::is_void<F_O> {}, std::true_type{}, f, std::move(in));
                     }
@@ -84,15 +92,20 @@ namespace lite_fnds {
 
             template <typename F_I, typename F_O>
             static auto make(then_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
+
                 auto wrapper = [f = std::move(self.f)](F_I&& in) noexcept {
+#if LFNDS_HAS_EXCEPTIONS
                     try {
+#endif
                         LIKELY_IF (in.has_value()) {
                             return f(std::move(in));
                         }
                         return F_O(error_tag, std::move(in).error());
+#if LFNDS_HAS_EXCEPTIONS
                     } catch (...) {
                         return F_O(error_tag, std::current_exception());
                     }
+#endif
                 };
                 return flow_calc_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
             }
@@ -100,9 +113,14 @@ namespace lite_fnds {
 
         template <typename I, typename O, typename... Nodes, typename F>
         auto operator|(flow_blueprint<I, O, Nodes...> bp, then_node<F> a) {
+#if LFNDS_HAS_EXCEPTIONS
             static_assert(is_invocable_with<F, O>::value,
                 "callable F is not compatible with current blueprint");
-
+#else
+            static_assert(is_nothrow_invocable_with<F, O>::value,
+                "callable F is not compatible with current blueprint"
+                "and must be nothrow-invocable.");
+#endif
             using F_O = invoke_result_t<F, O>;
             static_assert(is_result_t<F_O>::value,
                 "the output of the callable F in then must return a result<T, E>");
@@ -119,22 +137,33 @@ namespace lite_fnds {
             template <typename F_I, typename F_O>
             static auto make(error_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
                 auto wrapper = [f = std::move(self.f)](F_I&& in) noexcept {
-                    LIKELY_IF (in.has_value()) {
-                        return F_O(value_tag, std::move(in).value());
-                    }
+#if LFNDS_HAS_EXCEPTIONS
                     try {
+#endif
+                        LIKELY_IF (in.has_value()) {
+                            return F_O(value_tag, std::move(in).value());
+                        }
                         return f(std::move(in));
+#if LFNDS_HAS_EXCEPTIONS
                     } catch (...) {
                         return F_O(error_tag, std::current_exception());
                     }
                 };
+#endif
                 return flow_calc_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
             }
         };
 
         template <typename I, typename O, typename ... Nodes, typename F>
         auto operator|(flow_blueprint<I, O, Nodes ...> bp, error_node<F> a) {
-            static_assert(is_invocable_with<F, O>::value, "The callable F in error is not compatible with current blueprint.");
+#if LFNDS_HAS_EXCEPTIONS
+            static_assert(is_invocable_with<F, O>::value,
+                "The callable F in error is not compatible with current blueprint.");
+#else
+            static_assert(is_nothrow_invocable_with<F, O>::value,
+                "The callable F in error is not compatible with current blueprint."
+                "and must be nothrow-invocable.");
+#endif
 
             using F_O = invoke_result_t<F, O>;
             static_assert(is_result_t<F_O>::value, "The callable F in error must return a result<T, E>");
@@ -143,6 +172,7 @@ namespace lite_fnds {
             return std::move(bp) | std::move(node);
         }
 
+#if LFNDS_HAS_EXCEPTIONS
         // exception catch
         template <typename F, typename Exception>
         struct exception_catch_node {
@@ -190,6 +220,7 @@ namespace lite_fnds {
             auto node = exception_catch_node<F, Exception>::template make<O, F_O>(std::move(a));
             return std::move(bp) | std::move(node);
         }
+#endif
 
         // via
         template <typename Executor>
@@ -233,13 +264,18 @@ namespace lite_fnds {
             F f;
 
             template <typename F_I, typename F_O>
-            static auto make(end_node&& self) noexcept(std::is_nothrow_move_constructible<F>::value) {
+            static auto make(end_node&& self)
+                noexcept(std::is_nothrow_move_constructible<F>::value) {
                 auto wrapper = [f = std::move(self.f)](F_I&& in) noexcept {
+#if LFNDS_HAS_EXCEPTIONS
                     try {
+#endif
                         return f(std::move(in));
+#if LFNDS_HAS_EXCEPTIONS
                     } catch (...) {
                         return F_O(error_tag, std::current_exception());
                     }
+#endif
                 };
                 return flow_end_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
             }
@@ -259,8 +295,15 @@ namespace lite_fnds {
         template <typename I, typename O, typename... Nodes,
             typename F, std::enable_if_t<!std::is_void<F>::value, int> = 0>
         auto operator|(flow_blueprint<I, O, Nodes...> bp, end_node<F> a) {
+
+#if LFNDS_HAS_EXCEPTIONS
             static_assert(is_invocable_with<F, O>::value,
-                "The callable F in end is not compatible with current blueprint");
+                "The callable F in end is not compatible with current blueprint.");
+#else
+            static_assert(is_nothrow_invocable_with<F, O>::value,
+                "The callable F in end is not compatible with current blueprint."
+                "and must be nothrow-invocable.");
+#endif
 
             using F_O = invoke_result_t<F, O>;
             static_assert(is_result_t<F_O>::value, "The callable F in end must return a result<T, E>-like type");
@@ -287,7 +330,7 @@ namespace lite_fnds {
             return t;
         };
 
-        using node_type = flow_impl::flow_calc_node<R,  R, decltype(identity)>;
+        using node_type = flow_impl::flow_calc_node<R, R, decltype(identity)>;
         using storage_t = std::tuple<node_type>;
 
         return flow_impl::flow_blueprint<R, R, node_type>(
@@ -311,10 +354,12 @@ namespace lite_fnds {
         return flow_impl::error_node<std::decay_t<F>> { std::forward<F>(f) };
     }
 
+#if LFNDS_HAS_EXCEPTIONS
     template <typename Exception, typename F>
     inline auto catch_exception(F&& f) noexcept {
         return flow_impl::exception_catch_node<std::decay_t<F>, Exception> { std::forward<F>(f) };
     }
+#endif
 
     template <typename Executor>
     inline auto via(Executor&& exec) noexcept {

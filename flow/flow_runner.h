@@ -44,9 +44,7 @@ namespace lite_fnds {
             hard,
             soft,
         };
-
         std::atomic<runner_cancel> data{runner_cancel::none};
-
     public:
         void cancel(bool force = false) noexcept {
             data.store(force ? runner_cancel::hard : runner_cancel::soft, std::memory_order_relaxed);

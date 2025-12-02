@@ -9,7 +9,7 @@
 
 namespace lite_fnds {
     template <typename T, size_t len = sizeof(T), size_t align = alignof(T),
-        bool = std::is_trivially_destructible<T>::value>
+        bool = std::is_trivially_destructible<T>::value >
     struct inplace_storage_base;
 
     template <typename T, size_t len, size_t align>
@@ -23,44 +23,72 @@ namespace lite_fnds {
         bool _has_value;
 
     public:
-        constexpr inplace_storage_base() : _has_value{false} {
+        constexpr inplace_storage_base() noexcept :
+            _has_value{false} {
         }
 
-        ~inplace_storage_base() = default;
+        ~inplace_storage_base() noexcept = default;
 
         template <typename... Args,
             typename = std::enable_if_t<disjunction_v<
+#if LFNDS_HAS_EXCEPTIONS
                 std::is_constructible<T, Args &&...>,
-                is_aggregate_constructible<T, Args &&...> > > >
+                is_aggregate_constructible<T, Args &&...>
+#else
+                std::is_nothrow_constructible<T, Args &&...>,
+                is_nothrow_aggregate_constructible<T, Args &&...>
+#endif
+        > > >
         explicit inplace_storage_base(Args &&... args)
-            noexcept(noexcept(static_cast<base &>(*this).construct(std::forward<Args>(args)...))) : _has_value{false} {
+            noexcept(noexcept(static_cast<base*>(nullptr)->construct(std::declval<Args&&>...))) :
+            _has_value{false} {
             this->construct(std::forward<Args>(args)...);
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, const U &> > >* =
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<T, const U &>
+#else
+            std::is_nothrow_constructible<T, const U &>
+#endif
+        > >* =
                     nullptr>
         explicit inplace_storage_base(const inplace_storage_base<U, _len, _align> &rhs)
-            noexcept(std::is_nothrow_constructible<T, const U &>::value) : _has_value{false} {
+            noexcept(std::is_nothrow_constructible<T, const U &>::value) :
+            _has_value{false} {
             if (rhs.has_value()) {
                 this->construct(rhs.get());
             }
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, U &&> > >* = nullptr>
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<T, U &&>
+#else
+            std::is_nothrow_constructible<T, U &&>
+#endif
+            > >* = nullptr>
         explicit inplace_storage_base(inplace_storage_base<U, _len, _align> &&rhs)
-            noexcept(std::is_nothrow_constructible<T, U &&>::value) : _has_value{false} {
+            noexcept(std::is_nothrow_constructible<T, U &&>::value) :
+            _has_value{false} {
             if (rhs.has_value()) {
                 this->construct(std::move(rhs).get());
             }
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, const U &> > >* =
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<T, const U &>
+#else
+                std::is_nothrow_constructible<T, const U &>
+#endif
+        > >* =
                     nullptr>
         inplace_storage_base &operator=(const inplace_storage_base<U, _len, _align> &rhs)
-            noexcept(noexcept(this->emplace(std::declval<T>()))) {
+            noexcept(noexcept(std::declval<inplace_storage_base&>().emplace(std::declval<T>()))) {
             if (!rhs.has_value()) {
                 this->destroy();
             } else {
@@ -71,9 +99,15 @@ namespace lite_fnds {
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, U &&> > >* = nullptr>
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<T, U &&>
+#else
+            std::is_nothrow_constructible<T, U &&>
+#endif
+            > >* = nullptr>
         inplace_storage_base &operator=(inplace_storage_base<U, _len, _align> &&rhs)
-            noexcept(noexcept(this->emplace(std::declval<T>()))) {
+            noexcept(noexcept(std::declval<inplace_storage_base&>().emplace(std::declval<T>()))) {
             if (!rhs.has_value()) {
                 this->destroy();
             } else {
@@ -85,9 +119,15 @@ namespace lite_fnds {
 
         // this must be called when no value have been created yet.
         template <typename... Args, typename = std::enable_if_t<
-            disjunction_v<std::is_constructible<T, Args &&...>, is_aggregate_constructible<T, Args &&...> > > >
-        void construct(
-            Args &&... args) noexcept(noexcept(static_cast<base &>(*this).construct(std::forward<Args>(args)...))) {
+            disjunction_v<
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, Args &&...>, is_aggregate_constructible<T, Args &&...>
+#else
+                std::is_nothrow_constructible<T, Args &&...>, is_nothrow_aggregate_constructible<T, Args &&...>
+#endif
+        > > >
+        void construct(Args &&... args)
+                noexcept(noexcept(static_cast<base*>(nullptr)->construct(std::declval<Args&&>()...))) {
             assert(!_has_value && "construct() requires no live object");
             static_cast<base &>(*this).construct(std::forward<Args>(args)...);
             _has_value = true;
@@ -95,8 +135,8 @@ namespace lite_fnds {
 
         template <typename... Args, std::enable_if_t<conjunction_v<
             std::is_constructible<T, Args &&...>, can_strong_replace<T> >, int>  = 0>
-        void emplace(
-            Args &&... args) noexcept(noexcept(static_cast<base &>(*this).emplace(std::forward<Args>(args)...))) {
+        void emplace(Args &&... args)
+            noexcept(noexcept(static_cast<base*>(nullptr)->emplace(std::declval<Args&&>()...))) {
             if (!this->has_value()) {
                 this->construct(std::forward<Args>(args)...);
                 return;
@@ -120,7 +160,7 @@ namespace lite_fnds {
             return _has_value;
         }
 
-        void destroy() noexcept(noexcept(static_cast<base &>(*this).destroy())) {
+        void destroy() noexcept(noexcept(static_cast<base*>(nullptr)->destroy())) {
             if (has_value()) {
                 static_cast<base &>(*this).destroy();
                 _has_value = false;
@@ -154,7 +194,8 @@ namespace lite_fnds {
         bool _has_value;
 
     public:
-        constexpr inplace_storage_base() : _has_value{false} {
+        constexpr inplace_storage_base() noexcept
+            : _has_value{false} {
         }
 
         ~inplace_storage_base() {
@@ -163,37 +204,62 @@ namespace lite_fnds {
 
         template <typename... Args,
             typename = std::enable_if_t<disjunction_v<
-                std::is_constructible<T, Args &&...>,
-                is_aggregate_constructible<T, Args &&...> > > >
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, Args &&...>, is_aggregate_constructible<T, Args &&...>
+#else
+                std::is_nothrow_constructible<T, Args &&...>, is_nothrow_aggregate_constructible<T, Args &&...>
+#endif
+        > > >
         explicit inplace_storage_base(Args &&... args)
-            noexcept(noexcept(static_cast<base &>(*this).construct(std::forward<Args>(args)...))) : _has_value{false} {
+            noexcept(noexcept(static_cast<base*>(nullptr)->construct(std::declval<Args&&>()...))) :
+            _has_value{false} {
             this->construct(std::forward<Args>(args)...);
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, const U &> > >* =
-                    nullptr>
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, const U &>
+#else
+                std::is_nothrow_constructible<T, const U &>
+#endif
+            > >* =nullptr>
         explicit inplace_storage_base(const inplace_storage_base<U, _len, _align> &rhs)
-            noexcept(std::is_nothrow_constructible<T, const U &>::value) : _has_value{false} {
+            noexcept(std::is_nothrow_constructible<T, const U &>::value) :
+            _has_value{false} {
             if (rhs.has_value()) {
                 this->construct(rhs.get());
             }
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, U &&> > >* = nullptr>
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, U &&>
+#else
+                std::is_nothrow_constructible<T, U &&>
+#endif
+            > >* = nullptr>
         explicit inplace_storage_base(inplace_storage_base<U, _len, _align> &&rhs)
-            noexcept(std::is_nothrow_constructible<T, U &&>::value) : _has_value{false} {
+            noexcept(std::is_nothrow_constructible<T, U &&>::value) :
+            _has_value{false} {
             if (rhs.has_value()) {
                 this->construct(std::move(rhs).get());
             }
         }
 
         template <typename U, size_t _len, size_t _align,
-            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, const U &> > >* =
+            std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >,
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, const U &>
+#else
+                std::is_nothrow_constructible<T, const U &>
+#endif
+            > >* =
                     nullptr>
         inplace_storage_base &operator=(const inplace_storage_base<U, _len, _align> &rhs)
-            noexcept(std::is_nothrow_copy_constructible<T>::value && noexcept(this->emplace(std::declval<T&&>()))) {
+            noexcept(std::is_nothrow_copy_constructible<T>::value
+                && noexcept(std::declval<inplace_storage_base&>().emplace(std::declval<T&&>()))) {
             if (!rhs.has_value()) {
                 this->destroy();
             } else {
@@ -206,7 +272,8 @@ namespace lite_fnds {
         template <typename U, size_t _len, size_t _align,
             std::enable_if_t<conjunction_v<negation<std::is_same<T, U> >, std::is_constructible<T, U &&> > >* = nullptr>
         inplace_storage_base &operator=(inplace_storage_base<U, _len, _align> &&rhs)
-            noexcept(std::is_nothrow_move_constructible<T>::value && noexcept(this->emplace(std::declval<T&&>()))) {
+            noexcept(std::is_nothrow_move_constructible<T>::value
+                && noexcept(std::declval<inplace_storage_base&>().emplace(std::declval<T&&>()))) {
             if (!rhs.has_value()) {
                 this->destroy();
             } else {
@@ -218,9 +285,15 @@ namespace lite_fnds {
 
         // this must be called when no value have been created yet.
         template <typename... Args, typename = std::enable_if_t<
-            disjunction_v<std::is_constructible<T, Args &&...>, is_aggregate_constructible<T, Args &&...> > > >
-        void construct(
-            Args &&... args) noexcept(noexcept(static_cast<base &>(*this).construct(std::forward<Args>(args)...))) {
+            disjunction_v<
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T, Args &&...>, is_aggregate_constructible<T, Args &&...>
+#else
+                std::is_nothrow_constructible<T, Args &&...>, is_nothrow_aggregate_constructible<T, Args &&...>
+#endif
+            > > >
+        void construct(Args &&... args)
+            noexcept(noexcept(static_cast<base*>(nullptr)->construct(std::declval<Args&&>()...))) {
             assert(!_has_value && "construct() requires no live object");
             static_cast<base &>(*this).construct(std::forward<Args>(args)...);
             _has_value = true;
@@ -228,8 +301,8 @@ namespace lite_fnds {
 
         template <typename... Args, std::enable_if_t<conjunction_v<
             std::is_constructible<T, Args &&...>, can_strong_replace<T> >, int>  = 0>
-        void emplace(
-            Args &&... args) noexcept(noexcept(static_cast<base &>(*this).emplace(std::forward<Args>(args)...))) {
+        void emplace(Args &&... args)
+            noexcept(noexcept(static_cast<base*>(nullptr)->emplace(std::declval<Args&&>()...))) {
             if (!this->has_value()) {
                 this->construct(std::forward<Args>(args)...);
                 return;
@@ -253,7 +326,7 @@ namespace lite_fnds {
             return _has_value;
         }
 
-        void destroy() noexcept(noexcept(static_cast<base &>(*this).destroy())) {
+        void destroy() noexcept(noexcept(static_cast<base*>(nullptr)->destroy())) {
             if (has_value()) {
                 static_cast<base &>(*this).destroy();
                 _has_value = false;
@@ -417,20 +490,21 @@ namespace lite_fnds {
         using inplace_storage_move_assign_base<T, len, align>::inplace_storage_move_assign_base;
 
         inplace_t() = default;
-
         ~inplace_t() = default;
 
         inplace_t(const inplace_t &) = default;
-
         inplace_t(inplace_t &&) noexcept = default;
 
         inplace_t &operator=(const inplace_t &) = default;
-
         inplace_t &operator=(inplace_t &&) noexcept = default;
 
         using base::emplace;
         using base::destroy;
         using base::has_value;
+
+        explicit operator bool() const noexcept {
+            return has_value();
+        }
 
         T &get() noexcept {
             return static_cast<base &>(*this).get();
@@ -440,7 +514,13 @@ namespace lite_fnds {
             return static_cast<const base &>(*this).get();
         }
 
-        template <typename U = T, typename = std::enable_if_t<std::is_move_constructible<U>::value> >
+        template <typename U = T,
+#if LFNDS_HAS_EXCEPTIONS
+            typename = std::enable_if_t<std::is_move_constructible<U>::value>
+#else
+            typename = std::enable_if_t<std::is_nothrow_move_constructible<U>::value>
+#endif
+        >
         T steal() noexcept(std::is_nothrow_move_constructible<U>::value) {
             T t = static_cast<base &&>(*this).get();
             this->destroy();
@@ -476,7 +556,8 @@ namespace lite_fnds {
     }
 
     template <typename T, size_t len, size_t align>
-    void swap(inplace_t<T, len, align> &lhs, inplace_t<T, len, align> &rhs) noexcept(noexcept(lhs.swap(rhs))) {
+    void swap(inplace_t<T, len, align> &lhs, inplace_t<T, len, align> &rhs)
+        noexcept(noexcept(std::declval<inplace_t<T, len, align>&>().swap(std::declval<inplace_t<T, len, align>&>()))) {
         lhs.swap(rhs);
     }
 

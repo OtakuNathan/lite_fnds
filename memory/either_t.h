@@ -5,6 +5,9 @@
 
 #include "../base/inplace_base.h"
 
+// precondition: either_state is always first or second for either_storage_base<void, U>
+// empty state only exists during raw_either_storage_base default construction
+
 namespace lite_fnds {
 	template <size_t N>
 	struct in_place_index {};
@@ -24,10 +27,11 @@ namespace lite_fnds {
 			bool = std::is_trivially_destructible<U>::value>
 	struct raw_either_storage_base {
 		static_assert(conjunction_v<std::is_nothrow_destructible<T>, std::is_nothrow_destructible<U>>,
-				"T and U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be nothrow copy constructible or be nothrow move constructible.");
+			"T and U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
 
-		union storage{
+		union storage {
 			T first;
 			U second;
 
@@ -48,7 +52,12 @@ namespace lite_fnds {
 		}
 
 		template <typename T_ = T, typename ... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>>
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, Args && ... args)
 			noexcept (std::is_nothrow_constructible<T_, Args&&...>::value) :
 			_state{either_state::first} {
@@ -56,7 +65,12 @@ namespace lite_fnds {
 		}
 
 		template <typename T_ = T, typename F, typename ... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>>
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+			>
 		raw_either_storage_base(first_t, std::initializer_list<F> il, Args && ... args)
 			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args&&...>::value) :
 			_state{either_state::first} {
@@ -64,49 +78,83 @@ namespace lite_fnds {
 		}
 
 		template <typename U_ = U, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
 			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_copy_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, const T &t)
 			noexcept(std::is_nothrow_copy_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), t);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_move_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, T &&t)
 			noexcept(std::is_nothrow_move_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::move(t));
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value>>
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() {
+		~raw_either_storage_base() noexcept {
 			if (_state == either_state::first) {
 				opt::destroy_at(std::addressof(_data.first));
 			} else if (_state == either_state::second) {
@@ -118,9 +166,10 @@ namespace lite_fnds {
 	template <typename T, typename U>
 	struct raw_either_storage_base <T, U, true, false> {
 		static_assert(conjunction_v<std::is_nothrow_destructible<T>, std::is_nothrow_destructible<U>>,
-				"T and U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be at least be nothrow copy constructible or be nothrow move constructible.");
-		union storage{
+			"T and U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
+		union storage {
 			T first;
 			U second;
 
@@ -143,15 +192,26 @@ namespace lite_fnds {
 		raw_either_storage_base &operator=(const raw_either_storage_base &) = default;
 		raw_either_storage_base &operator=(raw_either_storage_base &&) = default;
 
-		template <typename T_ = T, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, Args &&...>::value> >
-		explicit raw_either_storage_base(first_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<T_, Args &&...>::value) : _state{either_state::first} {
+		template <typename T_ = T, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>
+#endif
+		>
+		explicit raw_either_storage_base(first_t, Args && ... args)
+			noexcept (std::is_nothrow_constructible<T_, Args&&...>::value) :
+			_state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::forward<Args>(args)...);
 		}
 
 		template <typename T_ = T, typename F, typename ... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>>
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+			>
 		raw_either_storage_base(first_t, std::initializer_list<F> il, Args && ... args)
 			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args&&...>::value) :
 			_state{either_state::first} {
@@ -159,49 +219,83 @@ namespace lite_fnds {
 		}
 
 		template <typename U_ = U, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
 			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_copy_constructible<T_>::value> >
-		explicit raw_either_storage_base(first_t, const T_ &t)
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<T_>::value>
+#endif
+		>
+		explicit raw_either_storage_base(first_t, const T &t)
 			noexcept(std::is_nothrow_copy_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), t);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_move_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, T &&t)
 			noexcept(std::is_nothrow_move_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::move(t));
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() {
+		~raw_either_storage_base() noexcept {
 			if (_state == either_state::second) {
 				opu::destroy_at(std::addressof(_data.second));
 			}
@@ -211,10 +305,11 @@ namespace lite_fnds {
 	template <typename T, typename U>
 	struct raw_either_storage_base <T, U, false, true> {
 		static_assert(conjunction_v<std::is_nothrow_destructible<T>, std::is_nothrow_destructible<U>>,
-				"T and U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be nothrow copy constructible or be nothrow move constructible.");
+			"T and U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
 
-		union storage{
+		union storage {
 			T first;
 			U second;
 
@@ -237,65 +332,110 @@ namespace lite_fnds {
 		raw_either_storage_base &operator=(const raw_either_storage_base &) = default;
 		raw_either_storage_base &operator=(raw_either_storage_base &&) = default;
 
-		template <typename T_ = T, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, Args &&...>::value> >
-		explicit raw_either_storage_base(first_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<T_, Args &&...>::value) : _state{either_state::first} {
+				template <typename T_ = T, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>
+#endif
+		>
+		explicit raw_either_storage_base(first_t, Args && ... args)
+			noexcept (std::is_nothrow_constructible<T_, Args&&...>::value) :
+			_state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>, Args &&...>::value> >
-		raw_either_storage_base(first_t, std::initializer_list<F> il, Args &&... args)
-			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args &&...>::value
-			) : _state{either_state::first} {
+		template <typename T_ = T, typename F, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+			>
+		raw_either_storage_base(first_t, std::initializer_list<F> il, Args && ... args)
+			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args&&...>::value) :
+			_state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), il, std::forward<Args>(args)...);
 		}
 
-		template <typename U_ = U, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+		template <typename U_ = U, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
 			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
 			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_copy_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, const T &t)
 			noexcept(std::is_nothrow_copy_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), t);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_move_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, T &&t)
 			noexcept(std::is_nothrow_move_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::move(t));
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() {
+		~raw_either_storage_base() noexcept {
 			if (_state == either_state::first) {
 				opt::destroy_at(std::addressof(_data.first));
 			}
@@ -305,10 +445,11 @@ namespace lite_fnds {
 	template <typename T, typename U>
 	struct raw_either_storage_base <T, U, true, true> {
 		static_assert(conjunction_v<std::is_nothrow_destructible<T>, std::is_nothrow_destructible<U>>,
-				"T and U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be nothrow copy constructible or be nothrow move constructible.");
+			"T and U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
 
-		union storage{
+		union storage {
 			T first;
 			U second;
 
@@ -330,74 +471,120 @@ namespace lite_fnds {
 		raw_either_storage_base &operator=(const raw_either_storage_base &) = default;
 		raw_either_storage_base &operator=(raw_either_storage_base &&) = default;
 
-		template <typename T_ = T, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, Args &&...>::value> >
-		explicit raw_either_storage_base(first_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<T_, Args &&...>::value) : _state{either_state::first} {
+		template <typename T_ = T, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>
+#endif
+		>
+		explicit raw_either_storage_base(first_t, Args && ... args)
+			noexcept (std::is_nothrow_constructible<T_, Args&&...>::value) :
+			_state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>, Args &&...>::value> >
-		raw_either_storage_base(first_t, std::initializer_list<F> il, Args &&... args)
-			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args &&...>::value) 
-			: _state{either_state::first} {
+		template <typename T_ = T, typename F, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+			>
+		raw_either_storage_base(first_t, std::initializer_list<F> il, Args && ... args)
+			noexcept (std::is_nothrow_constructible<T_, std::initializer_list<F>, Args&&...>::value) :
+			_state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), il, std::forward<Args>(args)...);
 		}
 
-		template <typename U_ = U, typename ... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+		template <typename U_ = U, typename... Args,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) 
-			: _state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value) 
-			: _state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
+			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_copy_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, const T &t)
 			noexcept(std::is_nothrow_copy_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), t);
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<std::is_move_constructible<T_>::value> >
+		template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<T_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<T_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(first_t, T &&t)
 			noexcept(std::is_nothrow_move_constructible<T>::value)
 			: _state{either_state::first} {
 			opt::construct_at(std::addressof(_data.first), std::move(t));
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() = default;
+		~raw_either_storage_base() noexcept = default;
 	};
 
 	template <typename U>
 	struct raw_either_storage_base <void, U, false, true> {
-		static_assert(std::is_nothrow_destructible<U>::value, "U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be nothrow copy constructible or be nothrow move constructible.");
+		static_assert(std::is_nothrow_destructible<U>::value,
+			"U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
 
-		union storage{
+		union storage {
 			struct {} first;
 			U second;
 
@@ -421,44 +608,66 @@ namespace lite_fnds {
 			_state{ either_state::first } { }
 
 		template <typename U_ = U, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+	typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+	typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+>
 		explicit raw_either_storage_base(second_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) 
-			: _state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value) 
-			: _state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
+			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
-
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() = default;
+		~raw_either_storage_base() noexcept = default;
 	};
 
 	template <typename U>
 	struct raw_either_storage_base <void, U, false, false> {
-		static_assert(std::is_nothrow_destructible<U>::value, "U must be nothrow destructible");
-		static_assert(can_strong_move_or_copy_constructible<U>::value, "The second type U must be nothrow copy constructible or be nothrow move constructible.");
+		static_assert(std::is_nothrow_destructible<U>::value,
+			"U must be nothrow destructible");
+		static_assert(can_strong_move_or_copy_constructible<U>::value,
+			"The second type U must be nothrow copy constructible or be nothrow move constructible.");
 
-		union storage{
+		union storage {
 			struct {} first;
 			U second;
 
@@ -478,36 +687,56 @@ namespace lite_fnds {
 			_state{ either_state::first } {}
 
 		template <typename U_ = U, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, Args &&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, Args &&...>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) :
-			_state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, Args &&...>::value) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::forward<Args>(args)...);
 		}
 
 		template <typename U_ = U, typename F, typename... Args,
-			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>, Args &&...>::value> >
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_constructible<U_, std::initializer_list<F>,  Args&&...>::value>
+#endif
+		>
 		raw_either_storage_base(second_t, std::initializer_list<F> il, Args &&... args)
-			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value) 
-			: _state{either_state::second} {
+			noexcept (std::is_nothrow_constructible<U_, std::initializer_list<F>, Args &&...>::value
+			) : _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), il, std::forward<Args>(args)...);
 		}
-
-		template <typename U_ = U, typename = std::enable_if_t<std::is_copy_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_copy_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, const U &u)
 			noexcept(std::is_nothrow_copy_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), u);
 		}
 
-		template <typename U_ = U, typename = std::enable_if_t<std::is_move_constructible<U_>::value> >
+		template <typename U_ = U,
+#if LFNDS_HAS_EXCEPTIONS
+			typename = std::enable_if_t<std::is_move_constructible<U_>::value>
+#else
+			typename = std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>
+#endif
+		>
 		explicit raw_either_storage_base(second_t, U &&u)
 			noexcept(std::is_nothrow_move_constructible<U>::value)
 			: _state{either_state::second} {
 			opu::construct_at(std::addressof(_data.second), std::move(u));
 		}
 
-		~raw_either_storage_base() {
+		~raw_either_storage_base() noexcept {
 			if (_state == either_state::second) {
 				opu::destroy_at(std::addressof(_data.second));
 			}
@@ -520,12 +749,14 @@ namespace lite_fnds {
 		using base::base;
 		using opt = typename base::opt;
 		using opu = typename base::opu;
-
+#if LFNDS_HAS_EXCEPTIONS
 		template <typename T_ = T, typename U_ = U, typename ... Args,
-			std::enable_if_t<conjunction_v<std::is_constructible<T_, Args&&...>, std::is_nothrow_move_constructible<U_>>>* = nullptr>
+			std::enable_if_t<conjunction_v<std::is_constructible<T_, Args&&...>,
+				std::is_nothrow_move_constructible<U_>>>* = nullptr>
 		void emplace_first(Args &&... args)
 			noexcept(conjunction_v<
-					std::integral_constant<bool, noexcept(opt::emplace_at(static_cast<T_*>(nullptr), std::forward<Args>(args)...))>,
+					std::integral_constant<bool,
+						noexcept(opt::emplace_at(static_cast<T_*>(nullptr), std::forward<Args>(args)...))>,
 					std::is_nothrow_constructible<T_, Args&&...>>) {
 			if (this->has_first()) {
 				opt::emplace_at(std::addressof(this->_data.first), std::forward<Args>(args)...);
@@ -568,10 +799,12 @@ namespace lite_fnds {
 		}
 
 		template <typename T_ = T, typename U_ = U, typename... Args,
-			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>, std::is_nothrow_move_constructible<U_>>>* = nullptr>
+			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>,
+				std::is_nothrow_move_constructible<U_>>>* = nullptr>
 		void emplace_second(Args &&... args)
 			noexcept(conjunction_v<std::is_nothrow_destructible<T_>, std::is_nothrow_constructible<U_, Args&&...>,
-			         std::integral_constant<bool, noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))>>) {
+			         std::integral_constant<bool,
+						noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))>>) {
 			if (!this->has_first()) {
 				opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
 				return;
@@ -584,7 +817,8 @@ namespace lite_fnds {
 		}
 
 		template <typename T_ = T, typename U_ = U, typename... Args,
-			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>, negation<std::is_nothrow_move_constructible<U_>>>>* = nullptr>
+			std::enable_if_t<conjunction_v<std::is_constructible<U_, Args&&...>,
+				negation<std::is_nothrow_move_constructible<U_>>>>* = nullptr>
 		void emplace_second(Args &&... args)
 			noexcept(conjunction_v<std::is_nothrow_destructible<T_>, std::is_nothrow_constructible<U_, Args&&...>,
 				 std::integral_constant<bool, noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))>>) {
@@ -598,16 +832,49 @@ namespace lite_fnds {
 			opu::construct_at(std::addressof(this->_data.second), tmp);
 			this->_state = either_state::second;
 		}
+#else
+		template <typename T_ = T, typename ... Args,
+			std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
+		void emplace_first(Args &&... args) noexcept {
+			if (this->has_first()) {
+				opt::emplace_at(std::addressof(this->_data.first), std::forward<Args>(args)...);
+				return;
+			}
+
+			opu::destroy_at(std::addressof(this->_data.second));
+			opt::construct_at(std::addressof(this->_data.first), std::forward<Args>(args)...);
+			this->_state = either_state::first;
+		}
+
+		template <typename U_ = U, typename... Args,
+			std::enable_if_t<std::is_nothrow_constructible<U_, Args&&...>::value>* = nullptr>
+		void emplace_second(Args &&... args) noexcept {
+			if (!this->has_first()) {
+				opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
+				return;
+			}
+
+			opt::destroy_at(std::addressof(this->_data.first));
+			opu::construct_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
+			this->_state = either_state::second;
+		}
+#endif
 
 		template <typename T_, typename U_,
-			std::enable_if_t<conjunction_v<negation<std::is_void<T>>,
-				std::is_constructible<T, T_&&>,
-				std::is_constructible<U, U_&&>>>* = nullptr>
+			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, T_&&>,	std::is_constructible<U, U_&&>
+#else
+				std::is_nothrow_constructible<T, T_&&>,	std::is_nothrow_constructible<U, U_&&>
+#endif
+		>>* = nullptr>
 		void assign(either_storage_base<T_, U_>&& rhs)
 			noexcept(conjunction_v<
 				std::is_nothrow_constructible<T, T_&&>, std::is_nothrow_constructible<U, U_&&>,
-				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_first(std::declval<T&&>()))>,
-				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
+				std::integral_constant<bool,
+					noexcept(std::declval<either_storage_base&>().emplace_first(std::declval<T&&>()))>,
+				std::integral_constant<bool,
+					noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
             if (static_cast<const void*>(this) == static_cast<const void*>(std::addressof(rhs))) {
                 return;
             }
@@ -620,9 +887,13 @@ namespace lite_fnds {
 		}
 
 		template <typename T_, typename U_,
-			std::enable_if_t<conjunction_v<negation<std::is_void<T>>,
-				std::is_constructible<T, const T_&>,
-				std::is_constructible<U, const U_&>>>* = nullptr>
+			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, const T_&>, std::is_constructible<U, const U_&>
+#else
+				std::is_nothrow_constructible<T, const T_&>, std::is_nothrow_constructible<U, const U_&>
+#endif
+		>>* = nullptr>
 		void assign(const either_storage_base<T_, U_> &rhs)
 			noexcept(conjunction_v<
 				std::is_nothrow_constructible<T, const T_&>, std::is_nothrow_constructible<U, const U_&>,
@@ -682,7 +953,14 @@ namespace lite_fnds {
 			this->_state = either_state::first;
 		}
 
-		template <typename U_ = U, typename ... Args, std::enable_if_t<std::is_constructible<U_, Args&&...>::value>* = nullptr>
+		template <typename U_ = U, typename ... Args,
+			std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U_, Args&&...>::value
+#else
+				std::is_nothrow_constructible<U_, Args&&...>::value
+#endif
+		>* = nullptr>
 		void emplace_second(Args &&... args)
 			noexcept(noexcept(opu::emplace_at(static_cast<U_*>(nullptr), std::forward<Args>(args)...))) {
 			if (this->has_first()) {
@@ -693,21 +971,36 @@ namespace lite_fnds {
 			opu::emplace_at(std::addressof(this->_data.second), std::forward<Args>(args)...);
 		}
 
-		template <typename U_, std::enable_if_t<std::is_constructible<U, U_&&>::value>* = nullptr>
+		template <typename U_, std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+			std::is_constructible<U_, U_&&>::value
+#else
+			std::is_nothrow_constructible<U_, U_&&>::value
+#endif
+		>* = nullptr>
 		void assign(either_storage_base<void, U_>&& rhs)
 			noexcept(conjunction_v<std::is_nothrow_constructible<U, U_&&>,
-				std::integral_constant<bool, noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
+				std::integral_constant<bool,
+					noexcept(std::declval<either_storage_base&>().emplace_second(std::declval<U&&>()))>>) {
 			if (reinterpret_cast<const void*>(this) == reinterpret_cast<const void*>(&rhs)) {
 				return;
 			}
 
-			if (!rhs.has_first()) {
+			if (rhs.has_first()) {
+				this->emplace_first();
+			} else {
 				this->emplace_second(std::move(rhs).get_second());
 			}
 		}
 
 		template <typename U_,
-			std::enable_if_t<std::is_constructible<U, const U_&>::value>* = nullptr>
+			std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U_, const U_&>::value
+#else
+				std::is_nothrow_constructible<U_, const U_&>::value
+#endif
+		>* = nullptr>
 		void assign(const either_storage_base<void, U_> &rhs)
 			noexcept(conjunction_v<std::is_nothrow_constructible<U, const U_&>,
 				disjunction<std::is_nothrow_copy_constructible<U_>, std::is_nothrow_copy_assignable<U_>>>) {
@@ -715,7 +1008,9 @@ namespace lite_fnds {
 				return;
 			}
 
-			if (!rhs.has_first()) {
+			if (rhs.has_first()) {
+				this->emplace_first();
+			} else {
 				this->emplace_second(rhs.get_second());
 			}
 		}
@@ -739,8 +1034,10 @@ namespace lite_fnds {
 
 	// copy construct
     template <typename T, typename U,
-		bool = conjunction_v<disjunction<std::is_void<T>, std::is_copy_constructible<T>>, std::is_copy_constructible<U>>,
-		bool = conjunction_v<disjunction<std::is_void<T>, std::is_trivially_copy_constructible<T>>, std::is_trivially_copy_constructible<U>>>
+		bool = conjunction_v<disjunction<std::is_void<T>,
+			std::is_copy_constructible<T>>, std::is_copy_constructible<U>>,
+		bool = conjunction_v<disjunction<std::is_void<T>,
+			std::is_trivially_copy_constructible<T>>, std::is_trivially_copy_constructible<U>>>
     struct either_storage_copy_construct_base : either_storage_base<T, U> {
         using either_storage_base<T, U>::either_storage_base;
     };
@@ -751,7 +1048,7 @@ namespace lite_fnds {
 
         either_storage_copy_construct_base() = default;
         either_storage_copy_construct_base(const either_storage_copy_construct_base& rhs)
-		noexcept(conjunction_v<std::is_nothrow_copy_constructible<T>, std::is_nothrow_copy_constructible<U>>)  {
+			noexcept(conjunction_v<std::is_nothrow_copy_constructible<T>, std::is_nothrow_copy_constructible<U>>)  {
         	using opt = typename either_storage_base<T, U>::opt;
         	using opu = typename either_storage_base<T, U>::opu;
 
@@ -787,8 +1084,10 @@ namespace lite_fnds {
 
     // move construct
     template <typename T, typename U,
-		bool = conjunction_v<disjunction<std::is_void<T>, std::is_move_constructible<T>>, std::is_move_constructible<U>>,
-		bool = conjunction_v<disjunction<std::is_void<T>, std::is_trivially_move_constructible<T>>, std::is_trivially_move_constructible<U>>>
+		bool = conjunction_v<disjunction<std::is_void<T>,
+			std::is_move_constructible<T>>, std::is_move_constructible<U>>,
+		bool = conjunction_v<disjunction<std::is_void<T>,
+			std::is_trivially_move_constructible<T>>, std::is_trivially_move_constructible<U>>>
     struct either_storage_move_construct_base : either_storage_copy_construct_base <T, U> {
         using either_storage_copy_construct_base<T, U>::either_storage_copy_construct_base;
     };
@@ -853,7 +1152,8 @@ namespace lite_fnds {
         either_storage_copy_assign_base(const either_storage_copy_assign_base &rhs) = default;
         either_storage_copy_assign_base(either_storage_copy_assign_base &&rhs) = default;
         either_storage_copy_assign_base &operator=(const either_storage_copy_assign_base &rhs)
-            noexcept(noexcept(std::declval<either_storage_base<T, U>&>().assign(std::declval<const either_storage_base<T,U>&>()))) {
+            noexcept(noexcept(std::declval<either_storage_base<T, U>&>().assign(
+            		std::declval<const either_storage_base<T,U>&>()))) {
         	this->assign(rhs);
             return *this;
         }
@@ -877,7 +1177,8 @@ namespace lite_fnds {
 	    either_storage_move_assign_base(either_storage_move_assign_base &&rhs) = default;
 	    either_storage_move_assign_base &operator=(const either_storage_move_assign_base &rhs) = default;
     	either_storage_move_assign_base &operator=(either_storage_move_assign_base &&rhs)
-			noexcept(noexcept(std::declval<either_storage_base<T, U>&>().assign(std::declval<either_storage_base<T,U>&&>()))) {
+			noexcept(noexcept(std::declval<either_storage_base<T, U>&>().assign(
+					std::declval<either_storage_base<T,U>&&>()))) {
     		this->assign(std::move(rhs));
     		return *this;
     	}
@@ -966,11 +1267,23 @@ namespace lite_fnds {
 	struct either_t :
 		private either_storage_move_assign_base<T, U>,
 		private either_ctor_delete_base<T, U,
+#if LFNDS_HAS_EXCEPTIONS
 			conjunction_v<disjunction<std::is_void<T>, std::is_copy_constructible<T>>, std::is_copy_constructible<U> >,
-			conjunction_v<disjunction<std::is_void<T>, std::is_move_constructible<T>>, std::is_move_constructible<U> >>,
+			conjunction_v<disjunction<std::is_void<T>, std::is_move_constructible<T>>, std::is_move_constructible<U> >
+#else
+			conjunction_v<disjunction<std::is_void<T>, std::is_nothrow_copy_constructible<T>>, std::is_nothrow_copy_constructible<U> >,
+			conjunction_v<disjunction<std::is_void<T>, std::is_nothrow_move_constructible<T>>, std::is_nothrow_move_constructible<U> >
+#endif
+		>,
 		private either_assign_delete_base<T, U,
+#if LFNDS_HAS_EXCEPTIONS
 			conjunction_v<disjunction<std::is_void<T>, std::is_copy_assignable<T>>, std::is_copy_assignable<U> >,
-			conjunction_v<disjunction<std::is_void<T>, std::is_move_assignable<T>>, std::is_move_assignable<U> >> {
+			conjunction_v<disjunction<std::is_void<T>, std::is_move_assignable<T>>, std::is_move_assignable<U> >
+#else
+			conjunction_v<disjunction<std::is_void<T>, std::is_nothrow_copy_assignable<T>>, std::is_nothrow_copy_assignable<U> >,
+			conjunction_v<disjunction<std::is_void<T>, std::is_nothrow_move_assignable<T>>, std::is_nothrow_move_assignable<U> >
+#endif
+		> {
 	private:
 		using base = either_storage_move_assign_base<T, U>;
 	public:
@@ -992,8 +1305,12 @@ namespace lite_fnds {
 			typename = std::enable_if_t<conjunction_v<
 				negation<std::is_void<T_>>,
 				negation<conjunction<std::is_same<T, T_>, std::is_same<U, U_>>>,
-				disjunction<std::is_constructible<T, T_&&>>,
-				disjunction<std::is_constructible<U, U_&&>>>>>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, T_&&>, std::is_constructible<U, U_&&>
+#else
+				std::is_nothrow_constructible<T, T_&&>, std::is_nothrow_constructible<U, U_&&>
+#endif
+		>>>
 		explicit either_t(either_t<T_, U_>&& rhs) noexcept(
 			conjunction_v<std::is_nothrow_constructible<T, T_&&>,
 				std::is_nothrow_constructible<U, U_&&>>) {
@@ -1001,10 +1318,12 @@ namespace lite_fnds {
 			using opu = typename base::opu;
 
 			if (rhs.has_first()) {
-				opt::construct_at(std::addressof(static_cast<base*>(this)->_data.first), std::move(rhs.get_first()));
+				opt::construct_at(std::addressof(static_cast<base*>(this)->_data.first),
+					std::move(rhs.get_first()));
                 static_cast<base*>(this)->_state = either_state::first;
 			} else {
-				opu::construct_at(std::addressof(static_cast<base*>(this)->_data.second), std::move(rhs.get_second()));
+				opu::construct_at(std::addressof(static_cast<base*>(this)->_data.second),
+					std::move(rhs.get_second()));
                 static_cast<base*>(this)->_state = either_state::second;
 			}
 		}
@@ -1013,8 +1332,12 @@ namespace lite_fnds {
 			typename = std::enable_if_t<conjunction_v<
 				negation<std::is_void<T_>>,
 				negation<conjunction<std::is_same<T, T_>, std::is_same<U, U_>>>,
-				disjunction<std::is_constructible<T, T_&&>, std::is_constructible<T, const T_&>>,
-				disjunction<std::is_constructible<U, U_&&>, std::is_constructible<U, const U_&>>>>>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, const T_&>, std::is_constructible<U, const U_&>
+#else
+				std::is_nothrow_constructible<T, const T_&>, std::is_nothrow_constructible<U, const U_&>
+#endif
+		>>>
 		explicit either_t(const either_t<T_, U_>& rhs) noexcept(
 			conjunction_v<std::is_nothrow_constructible<T, const T_&>,
 				std::is_nothrow_constructible<U, const U_&>>) {
@@ -1034,7 +1357,12 @@ namespace lite_fnds {
 				negation<std::is_void<T_>>, negation<std::is_void<U_>>,
 				negation<std::is_same<T_, T> >, negation<std::is_same<U_, U> >,
 				can_strong_replace<T_>,
-				std::is_constructible<T, T_&&>, std::is_constructible<U, U_&&>>>>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, T_&&>, std::is_constructible<U, U_&&>
+#else
+				std::is_nothrow_constructible<T, T_&&>, std::is_nothrow_constructible<U, U_&&>
+#endif
+		>>>
 		either_t& operator=(either_t<T_, U_>&& rhs)
 			noexcept(noexcept(std::declval<base&>().assign(std::move(rhs)))) {
 			this->assign(std::move(rhs));
@@ -1046,25 +1374,27 @@ namespace lite_fnds {
 				negation<std::is_void<T_>>, negation<std::is_void<U_>>,
 				negation<std::is_same<T_, T>>, negation<std::is_same<U_, U>>,
 				can_strong_replace<T_>,
-				std::is_constructible<T, const T_ &>, std::is_constructible<U, const U_ &>>>>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<T, const T_&>, std::is_constructible<U, const U_&>
+#else
+				std::is_nothrow_constructible<T, const T_&>, std::is_nothrow_constructible<U, const U_&>
+#endif
+		>>>
 		either_t& operator=(const either_t<T_, U_>& rhs)
 			noexcept(noexcept(std::declval<base&>().assign(rhs))) {
 			this->assign(rhs);
 			return *this;
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<!std::is_void<T_>::value>>
-		T_& get_first() & noexcept {
+		T& get_first() & noexcept {
 			return static_cast<base&>(*this).get_first();
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<!std::is_void<T_>::value>>
-		const T_& get_first() const & noexcept {
+		const T& get_first() const & noexcept {
 			return static_cast<const base&>(*this).get_first();
 		}
 
-		template <typename T_ = T, typename = std::enable_if_t<!std::is_void<T_>::value>>
-        T_&& get_first() && noexcept {
+        T&& get_first() && noexcept {
             return static_cast<base&&>(*this).get_first();
         }
 
@@ -1082,7 +1412,12 @@ namespace lite_fnds {
 
 		template <typename T_ = T,
 			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
-				std::is_move_constructible<T_>, can_strong_replace<T_>> >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_move_constructible<T_>, can_strong_replace<T_>
+#else
+				std::is_nothrow_move_constructible<T_>
+#endif
+		>>* = nullptr>
 		either_t& operator=(std::add_rvalue_reference_t<std::decay_t<T_>> t)
 			noexcept(noexcept(std::declval<either_t&>().emplace_first(std::declval<std::decay_t<T_>&&>()))) {
 			this->emplace_first(std::move(t));
@@ -1091,7 +1426,12 @@ namespace lite_fnds {
 
 		template <typename T_ = T,
 			std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
-				std::is_copy_constructible<T_>, can_strong_replace<T_>>>* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_copy_constructible<T_>, can_strong_replace<T_>
+#else
+				std::is_nothrow_copy_constructible<T_>
+#endif
+		>>* = nullptr>
 		either_t& operator=(std::add_lvalue_reference_t<std::decay_t<const T_>> t)
 			noexcept(noexcept(std::declval<either_t&>().emplace_first(std::declval<const std::decay_t<T_>&>()))) {
 			this->emplace_first(t);
@@ -1112,6 +1452,7 @@ namespace lite_fnds {
 			return *this;
 		}
 
+#if !LFNDS_HAS_EXCEPTIONS
 		template <typename U_ = U, std::enable_if_t<conjunction_v<std::is_move_constructible<U_>,
 			negation<std::is_nothrow_move_constructible<U_>>>>* = nullptr>
 		either_t& operator=(std::add_rvalue_reference_t<std::decay_t<U_>> u) {
@@ -1127,6 +1468,7 @@ namespace lite_fnds {
 			}
 			return *this;
 		}
+#endif
 
 		template <typename U_ = U, std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>* = nullptr>
 		either_t& operator=(std::add_lvalue_reference_t<std::decay_t<const U_>> u) noexcept {
@@ -1142,6 +1484,7 @@ namespace lite_fnds {
 			return *this;
 		}
 
+#if !LFNDS_HAS_EXCEPTIONS
 		template <typename U_ = U, std::enable_if_t<conjunction_v<
 			std::is_copy_constructible<U_>,
 			negation<std::is_nothrow_copy_constructible<U_>>>>* = nullptr>
@@ -1158,12 +1501,9 @@ namespace lite_fnds {
 			}
 			return *this;
 		}
+#endif
 
-		using t_is_void = std::true_type;
-		using t_is_not_void = std::false_type;
-		void swap_both_first(either_t& rhs, t_is_void) noexcept {}
-
-		void swap_both_first(either_t& rhs, t_is_not_void) 
+		void swap_both_first(either_t& rhs)
 			noexcept(is_nothrow_swappable<T>::value) {
 			using std::swap;
 			swap(this->get_first(), rhs.get_first());
@@ -1174,7 +1514,7 @@ namespace lite_fnds {
 		using u_is_nothrow_move_constructible = std::true_type;
 		using u_is_nothrow_copy_constructible = std::false_type;
 
-		void swap_one_first_another_second_t_is_not_void_impl(either_t& rhs,
+		void swap_one_first_another_second_impl(either_t& rhs,
 				t_is_nothrow_move_constructible,
 				u_is_nothrow_move_constructible) noexcept {
 			T tmp = std::move(this->get_first());
@@ -1188,7 +1528,7 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second_t_is_not_void_impl(either_t& rhs,
+		void swap_one_first_another_second_impl(either_t& rhs,
 				t_is_nothrow_move_constructible,
 				u_is_nothrow_copy_constructible) noexcept {
 			T tmp = std::move(this->get_first());
@@ -1202,7 +1542,7 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second_t_is_not_void_impl(either_t& rhs,
+		void swap_one_first_another_second_impl(either_t& rhs,
 				t_is_nothrow_copy_constructible,
 				u_is_nothrow_move_constructible) noexcept {
 			T tmp = this->get_first();
@@ -1216,7 +1556,7 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second_t_is_not_void_impl(either_t& rhs,
+		void swap_one_first_another_second_impl(either_t& rhs,
 			t_is_nothrow_copy_constructible,
 			u_is_nothrow_copy_constructible) noexcept {
 			T tmp = this->get_first();
@@ -1230,14 +1570,191 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second(either_t& rhs, t_is_not_void) noexcept {
+		void swap_one_first_another_second(either_t& rhs) noexcept {
 			using std::swap;
-			swap_one_first_another_second_t_is_not_void_impl(rhs,
+			swap_one_first_another_second_impl(rhs,
 				std::is_nothrow_move_constructible<T>(),
 				std::is_nothrow_move_constructible<U>());
 		}
 
-		void swap_one_first_another_second_t_is_void_impl(either_t& rhs, u_is_nothrow_move_constructible) noexcept {
+		template <typename T_ = T, typename U_ = U,
+			std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+				conjunction_v<is_swappable<T_>, is_swappable<U_>, can_strong_move_or_copy_constructible<T_>>
+#else
+				conjunction_v<is_nothrow_swappable<T>, is_nothrow_swappable<U>>
+#endif
+		>* =nullptr>
+		void swap(either_t& rhs)
+			noexcept(conjunction_v<is_nothrow_swappable<T>, is_nothrow_swappable<U>>) {
+			if (this == std::addressof(rhs)) {
+				return;
+			}
+
+			if (this->has_first() && rhs.has_first()) {
+				swap_both_first(rhs);
+			} else if (this->has_first() && !rhs.has_first()) {
+				swap_one_first_another_second(rhs);
+			} else if (!this->has_first() && rhs.has_first()) {
+				rhs.swap(*this);
+			} else {
+				using std::swap;
+				swap(this->get_second(), rhs.get_second());
+			}
+		}
+	};
+
+	template <typename U>
+	struct either_t <void, U> :
+		private either_storage_move_assign_base<void, U>,
+		private either_ctor_delete_base<void, U,
+#if LFNDS_HAS_EXCEPTIONS
+			std::is_copy_constructible<U>::value,
+			std::is_move_constructible<U>::value
+#else
+			std::is_nothrow_copy_constructible<U>::value,
+			std::is_nothrow_move_constructible<U>::value
+#endif
+		>,
+		private either_assign_delete_base<void, U,
+#if LFNDS_HAS_EXCEPTIONS
+			std::is_copy_assignable<U>::value,
+			std::is_move_assignable<U>::value
+#else
+			std::is_nothrow_copy_assignable<U>::value,
+			std::is_nothrow_move_assignable<U>::value
+#endif
+		> {
+	private:
+		using base = either_storage_move_assign_base<void, U>;
+	public:
+		using base::base;
+		using first_type = typename base::first_type;
+		using second_type = typename base::second_type;
+		using base::has_first;
+		using base::emplace_first;
+		using base::emplace_second;
+
+		either_t() = delete;
+		either_t(const either_t &) = default;
+		either_t(either_t &&) noexcept = default;
+		either_t &operator=(const either_t &) = default;
+		either_t &operator=(either_t &&) noexcept = default;
+		~either_t() = default;
+
+		template <typename U_,
+			typename = std::enable_if_t<conjunction_v<
+				negation<std::is_same<U, U_>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U, U_&&>
+#else
+				std::is_nothrow_constructible<U, U_&&>
+#endif
+		>>>
+		explicit either_t(either_t<void, U_>&& rhs)
+			noexcept(std::is_nothrow_constructible<U, U_&&>::value) {
+			using opu = typename base::opu;
+
+			if (rhs.has_first()) {
+                static_cast<base*>(this)->_state = either_state::first;
+			} else {
+				opu::construct_at(std::addressof(static_cast<base*>(this)->_data.second),
+					std::move(rhs.get_second()));
+                static_cast<base*>(this)->_state = either_state::second;
+			}
+		}
+
+		template <typename U_,
+			typename = std::enable_if_t<conjunction_v<
+				negation<std::is_same<U, U_>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U, const U_&>
+#else
+				std::is_nothrow_constructible<U, const U_&>
+#endif
+		>>>
+		explicit either_t(const either_t<void, U_>& rhs)
+			noexcept(std::is_nothrow_constructible<U, const U_&>::value) {
+			using opu = typename base::opu;
+			if (rhs.has_first()) {
+                static_cast<base*>(this)->_state = either_state::first;
+			} else {
+				opu::construct_at(std::addressof(static_cast<base*>(this)->_data.second), rhs.get_second());
+                static_cast<base*>(this)->_state = either_state::second;
+			}
+		}
+
+		template <typename U_,
+			typename = std::enable_if_t<conjunction_v<
+				negation<std::is_same<U_, U>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U, U_&&>
+#else
+				std::is_nothrow_constructible<U, U_&&>
+#endif
+		>>>
+		either_t& operator=(either_t<void, U_>&& rhs)
+			noexcept(noexcept(std::declval<base&>().assign(std::move(rhs)))) {
+			this->assign(std::move(rhs));
+			return *this;
+		}
+
+		template <typename U_,
+			typename = std::enable_if_t<conjunction_v<
+				negation<std::is_same<U_, U>>,
+#if LFNDS_HAS_EXCEPTIONS
+				std::is_constructible<U, const U_&>
+#else
+				std::is_nothrow_constructible<U, const U_&>
+#endif
+		>>>
+		either_t& operator=(const either_t<void, U_>& rhs)
+			noexcept(noexcept(std::declval<base&>().assign(rhs))) {
+			this->assign(rhs);
+			return *this;
+		}
+
+		U& get_second() & noexcept {
+            return static_cast<base&>(*this).get_second();
+        }
+
+		const U& get_second() const & noexcept {
+			return static_cast<const base&>(*this).get_second();
+		}
+
+		U&& get_second() && noexcept {
+            return static_cast<base&&>(*this).get_second();
+		}
+
+		template <typename U_ = U,
+			std::enable_if_t<std::is_nothrow_move_constructible<U_>::value>* = nullptr>
+		either_t& operator=(std::add_rvalue_reference_t<std::decay_t<U_>> u) noexcept {
+			using opu = typename base::opu;
+			if (!this->has_first()) {
+				opu::emplace_at(std::addressof(this->_data.second), std::move(u));
+			} else {
+				opu::construct_at(std::addressof(this->_data.second), std::move(u));
+				this->_state = either_state::second;
+			}
+			return *this;
+		}
+
+		template <typename U_ = U, std::enable_if_t<std::is_nothrow_copy_constructible<U_>::value>* = nullptr>
+		either_t& operator=(std::add_lvalue_reference_t<std::decay_t<const U_>> u) noexcept {
+			using opu = typename base::opu;
+			if (!this->has_first()) {
+				opu::emplace_at(std::addressof(this->_data.second), u);
+			} else {
+				opu::construct_at(std::addressof(this->_data.second), u);
+				this->_state = either_state::second;
+			}
+			return *this;
+		}
+
+		using u_is_nothrow_move_constructible = std::true_type;
+		using u_is_nothrow_copy_constructible = std::false_type;
+
+		void swap_one_first_another_second_impl(either_t& rhs, u_is_nothrow_move_constructible) noexcept {
 			using std::swap;
 
 			base::opu::construct_at(std::addressof(this->_data.second), std::move(rhs._data.second));
@@ -1247,7 +1764,7 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second_t_is_void_impl(either_t& rhs, u_is_nothrow_copy_constructible) noexcept {
+		void swap_one_first_another_second_impl(either_t& rhs, u_is_nothrow_copy_constructible) noexcept {
 			using std::swap;
 
 			base::opu::construct_at(std::addressof(this->_data.second), rhs._data.second);
@@ -1257,23 +1774,26 @@ namespace lite_fnds {
 			rhs._state = either_state::first;
 		}
 
-		void swap_one_first_another_second(either_t& rhs, t_is_void) noexcept {
-			swap_one_first_another_second_t_is_void_impl(rhs, std::is_nothrow_move_constructible<U>());
+		void swap_one_first_another_second(either_t& rhs) noexcept {
+			swap_one_first_another_second_impl(rhs, std::is_nothrow_move_constructible<U>());
 		}
 
-		template <typename T_ = T, typename U_ = U,
-			std::enable_if_t<conjunction_v<disjunction<std::is_void<T>, is_swappable<T_>>, is_swappable<U_>,
-				disjunction<std::is_void<T>, can_strong_move_or_copy_constructible<T_>>>>* =nullptr>
-		void swap(either_t& rhs) noexcept(
-				conjunction_v<disjunction<std::is_void<T>, is_nothrow_swappable<T>>, is_nothrow_swappable<U>>) {
-			if (this == std::addressof(rhs)) {
+		template <typename U_ = U,
+			std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+				is_swappable<U_>::value
+#else
+				is_nothrow_swappable<U>::value
+#endif
+		>* =nullptr>
+		void swap(either_t& rhs)
+			noexcept(is_nothrow_swappable<U>::value) {
+			if (this == std::addressof(rhs) || this->has_first() && rhs.has_first()) {
 				return;
 			}
 
-			if (this->has_first() && rhs.has_first()) {
-				swap_both_first(rhs, std::is_void<T_>());
-			} else if (this->has_first() && !rhs.has_first()) {
-				swap_one_first_another_second(rhs, std::is_void<T_>());
+			if (this->has_first() && !rhs.has_first()) {
+				swap_one_first_another_second(rhs);
 			} else if (!this->has_first() && rhs.has_first()) {
 				rhs.swap(*this);
 			} else {
@@ -1284,7 +1804,8 @@ namespace lite_fnds {
 	};
 
 	template <typename T, typename U>
-	void swap(either_t<T, U>& lhs, either_t<T, U>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
+	void swap(either_t<T, U>& lhs, either_t<T, U>& rhs)
+		noexcept(noexcept(std::declval<either_t<T, U>&>().swap(std::declval<either_t<T, U>&>()))) {
 		lhs.swap(rhs);
 	}
 
