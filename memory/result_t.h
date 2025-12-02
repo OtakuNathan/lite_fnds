@@ -2,8 +2,8 @@
 // Created by wufen on 10/6/2025.
 //
 
-#ifndef __LITE_FNDS_RESULTT__H__
-#define __LITE_FNDS_RESULTT__H__
+#ifndef __LITE_FNDS_RESULTT_H__
+#define __LITE_FNDS_RESULTT_H__
 
 #include "either_t.h"
 
@@ -17,22 +17,40 @@ namespace lite_fnds {
     public:
         error_t() = delete;
 
+#if !LFNDS_HAS_EXCEPTIONS
+        template <typename E_ = E, std::enable_if_t<std::is_nothrow_copy_constructible<E_>::value>* = nullptr>
+#endif
         constexpr explicit error_t(const E &e)
             noexcept(std::is_nothrow_copy_constructible<E>::value) : _error(e) {
         }
 
+#if !LFNDS_HAS_EXCEPTIONS
+        template <typename E_ = E, std::enable_if_t<std::is_nothrow_move_constructible<E_>::value>* = nullptr>
+#endif
         constexpr explicit error_t(E &&e)
             noexcept(std::is_nothrow_move_constructible<E>::value) : _error(std::move(e)) {
         }
 
         template <typename... Args,
-            std::enable_if_t<std::is_constructible<E, Args &&...>::value>* = nullptr>
+            std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<E, Args &&...>::value
+#else
+            std::is_nothrow_constructible<E, Args &&...>::value
+#endif
+            >* = nullptr>
         constexpr explicit error_t(Args &&... args)
             noexcept(std::is_nothrow_constructible<E, Args &&...>::value) : _error(std::forward<Args>(args)...) {
         }
 
         template <typename T, typename... Args,
-            std::enable_if_t<std::is_constructible<E, std::initializer_list<T>, Args &&...>::value>* = nullptr>
+            std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<E, std::initializer_list<T>, Args &&...>::value
+#else
+            std::is_nothrow_constructible<E, std::initializer_list<T>, Args &&...>::value
+#endif
+            >* = nullptr>
         constexpr error_t(std::initializer_list<T> il, Args &&... args)
             noexcept(std::is_nothrow_constructible<E, std::initializer_list<T>, Args &&...>::value) : _error(
             il, std::forward<Args>(args)...) {
@@ -138,7 +156,12 @@ namespace lite_fnds {
         template <typename U, typename F, typename other_base = typename result_t<U, F>::base,
             std::enable_if_t<conjunction_v<negation<std::is_void<U>>,
                 negation<conjunction<std::is_same<T, U>, std::is_same<E, F> > >,
-                std::is_constructible<base, other_base &&> > >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<base&, other_base &&>
+#else
+                std::is_constructible<base&, other_base &&>
+#endif
+        > >* = nullptr>
         explicit result_t(result_t<U, F> &&rhs)
             noexcept(noexcept(base(std::declval<other_base &&>())))
             : base(std::move(rhs)._as_base()) {
@@ -147,7 +170,12 @@ namespace lite_fnds {
         template <typename U, typename F, typename other_base = typename result_t<U, F>::base,
             std::enable_if_t<conjunction_v<negation<std::is_void<U>>,
                 negation<conjunction<std::is_same<T, U>, std::is_same<E, F> > >,
-                std::is_constructible<base, const other_base &> > >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<base&, const other_base &>
+#else
+                std::is_nothrow_constructible<base&, const other_base &>
+#endif
+        > >* = nullptr>
         explicit result_t(const result_t<U, F> &rhs)
             noexcept(noexcept(base(std::declval<const other_base &>())))
             : base(rhs._as_base()) {
@@ -157,7 +185,12 @@ namespace lite_fnds {
             class other_base = typename result_t<U, F>::base,
             std::enable_if_t<conjunction_v<negation<std::is_void<U>>,
                 negation<conjunction<std::is_same<T, U>, std::is_same<E, F> > >,
-                std::is_assignable<base&, other_base &&> > >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_assignable<base&, other_base &&>
+#else
+                std::is_nothrow_assignable<base&, other_base &&>
+#endif
+        > >* = nullptr>
         result_t& operator=(result_t<U, F> &&rhs)
             noexcept(noexcept(std::declval<base &>() = std::declval<other_base &&>())) {
             this->_as_base() = std::move(rhs)._as_base();
@@ -167,7 +200,12 @@ namespace lite_fnds {
         template <typename U, typename F, typename other_base = typename result_t<U, F>::base,
             std::enable_if_t<conjunction_v<negation<std::is_void<U>>,
                 negation<conjunction<std::is_same<T, U>, std::is_same<E, F> > >,
-                std::is_assignable<base&, const other_base &> > >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_assignable<base&, const other_base &>
+#else
+                std::is_nothrow_assignable<base&, const other_base &>
+#endif
+        > >* = nullptr>
         result_t& operator=(const result_t<U, F> &rhs)
             noexcept(noexcept(std::declval<base &>() = std::declval<const other_base &>())) {
             this->_as_base() = rhs._as_base();
@@ -176,7 +214,12 @@ namespace lite_fnds {
 
         template <typename T_ = T,
             std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
-                std::is_move_constructible<T_>, can_strong_replace<T_>> >* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_move_constructible<T_>, can_strong_replace<T_>
+#else
+                std::is_nothrow_move_constructible<T_>
+#endif
+        >>* = nullptr>
         result_t& operator=(std::add_rvalue_reference_t<std::decay_t<T_>> t)
             noexcept(noexcept(std::declval<base&>() = std::move(t))) {
             this->_as_base() = std::move(t);
@@ -185,21 +228,38 @@ namespace lite_fnds {
 
         template <typename T_ = T,
             std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
-                std::is_copy_constructible<T_>, can_strong_replace<T_>>>* = nullptr>
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_copy_constructible<T_>, can_strong_replace<T_>
+#else
+                std::is_nothrow_copy_constructible<T_>
+#endif
+        >>* = nullptr>
         result_t& operator=(std::add_lvalue_reference_t<std::decay_t<const T_>> t)
             noexcept(noexcept(std::declval<base&>() = t)) {
             this->_as_base() = t;
             return *this;
         }
 
-        template <typename F_ = error_t<E>, std::enable_if_t<std::is_move_constructible<F_>::value >* = nullptr>
+        template <typename F_ = error_t<E>, std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_move_constructible<F_>::value
+#else
+            std::is_nothrow_move_constructible<F_>::value
+#endif
+        >* = nullptr>
         result_t& operator=(std::add_rvalue_reference_t<std::decay_t<F_> > err)
             noexcept(noexcept(std::declval<base&>() = std::move(err))) {
             this->_as_base() = std::move(err);
             return *this;
         }
 
-        template <typename F_ = error_t<E>, std::enable_if_t<std::is_copy_constructible<F_>::value>* = nullptr>
+        template <typename F_ = error_t<E>, std::enable_if_t<
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_copy_constructible<F_>::value
+#else
+            std::is_nothrow_copy_constructible<F_>::value
+#endif
+        >* = nullptr>
         result_t& operator=(std::add_lvalue_reference_t<std::decay_t<const F_>> err)
             noexcept(noexcept(std::declval<base&>() = err)) {
             this->_as_base() = err;
@@ -212,14 +272,26 @@ namespace lite_fnds {
         }
 
         template <typename T_ = T, typename ... Args,
-            std::enable_if_t<conjunction_v<negation<std::is_void<T_>>, std::is_constructible<T_, Args&&...>>>* = nullptr>
+            std::enable_if_t<conjunction_v<negation<std::is_void<T_>>,
+#if LFNDS_HAS_EXCEPTIONS
+                std::is_constructible<T_, Args&&...>
+#else
+                std::is_nothrow_constructible<T_, Args&&...>
+#endif
+            >>* = nullptr>
         void emplace_value(Args&& ... args)
             noexcept(noexcept (std::declval<base&>().emplace_first(std::declval<Args&&>()...))) {
             this->emplace_first(std::forward<Args>(args)...);
         }
 
         template <typename F_ = error_t<E>, typename... Args,
-            std::enable_if_t<conjunction_v<std::is_constructible<F_, Args &&...>>>* = nullptr>
+            std::enable_if_t<conjunction_v<
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_constructible<F_, Args &&...>
+#else
+            std::is_nothrow_constructible<F_, Args &&...>
+#endif
+            >>* = nullptr>
         void emplace_error(Args &&... args)
             noexcept(noexcept (std::declval<base&>().emplace_second(std::declval<Args&&>()...))) {
             this->emplace_second(std::forward<Args>(args)...);
@@ -254,17 +326,24 @@ namespace lite_fnds {
     };
 
     template <typename R>
-    struct is_result_t : std::false_type{};
+    struct is_result_impl : std::false_type {};
 
     template <typename T, typename E>
-    struct is_result_t <result_t<T, E>> : std::true_type{};
+    struct is_result_impl<result_t<T, E>> : std::true_type {};
+
+    template <typename R>
+    struct is_result_t : is_result_impl<std::decay_t<R>> {};
+
+    template <typename R>
+    constexpr bool is_result_t_v = is_result_t<R>::value;
 
     template <class T, class E>
-    void swap(result_t<T,E>& a, result_t<T,E>& b) noexcept(noexcept(a.swap(b))) {
+    void swap(result_t<T,E>& a, result_t<T,E>& b)
+        noexcept(noexcept(std::declval<result_t<T, E>&>().swap(std::declval<result_t<T, E>&>()))) {
         a.swap(b);
     }
 
 }
 
 
-#endif //RESULTT__H
+#endif //__LITE_FNDS_RESULTT_H__

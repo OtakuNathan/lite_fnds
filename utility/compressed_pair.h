@@ -17,8 +17,20 @@
 namespace lite_fnds {
     template <typename T, size_t index, bool _is_empty = std::is_empty<T>::value && !std::is_final<T>::value>
     struct TS_EMPTY_BASES compressed_pair_element : 
-        private ctor_delete_base<T, std::is_copy_constructible<T>::value, std::is_move_constructible<T>::value>,
-        private assign_delete_base<T, std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value> {
+        private ctor_delete_base<T,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_copy_constructible<T>::value, std::is_move_constructible<T>::value
+#else
+            std::is_nothrow_copy_constructible<T>::value, std::is_nothrow_move_constructible<T>::value
+#endif
+        >,
+        private assign_delete_base<T,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value
+#else
+            std::is_nothrow_copy_assignable<T>::value, std::is_nothrow_move_assignable<T>::value
+#endif
+        > {
     static_assert(!std::is_void<T>::value, "T must not be void");
 
     using value_type = T;
@@ -39,15 +51,26 @@ namespace lite_fnds {
 
     ~compressed_pair_element() noexcept = default;
 
-    template <typename T_ = T, typename ... Args, 
-        typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>>
+
+    template <typename T_ = T, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+        typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>
+#endif
+            >
     compressed_pair_element(Args&& ... args)
         noexcept(std::is_nothrow_constructible<T_, Args&&...>::value)
         : _value(std::forward<Args>(args)...) {
     }
 
     template <typename T_ = T, typename K, typename... Args,
-        typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<K>, Args&&...>::value>>
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<K>, Args&&...>::value>
+#else
+        typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value>
+#endif
+            >
     compressed_pair_element(std::initializer_list<K> il, Args&&... args) 
         noexcept(std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value)
         : _value(il, std::forward<Args>(args)...) {
@@ -69,9 +92,15 @@ namespace lite_fnds {
         return _value;
     }
 
-    template <typename T_ = T, typename = std::enable_if_t<is_swappable<T_>::value>>
+    template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+            typename = std::enable_if_t<is_swappable<T_>::value>
+#else
+            typename = std::enable_if_t<is_nothrow_swappable<T_>::value>
+#endif
+            >
     void swap(compressed_pair_element& rhs) 
-        noexcept(noexcept(swap(std::declval<value_type&>(), std::declval<value_type&>()))) {
+        noexcept(is_nothrow_swappable<T_>::value) {
         using std::swap;
         swap(_value, rhs._value);
     }
@@ -81,8 +110,20 @@ namespace lite_fnds {
 
 template <typename T, size_t index>
 struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
-    private ctor_delete_base<T, std::is_copy_constructible<T>::value, std::is_move_constructible<T>::value>,
-    private assign_delete_base<T, std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value> {
+    private ctor_delete_base<T,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_copy_constructible<T>::value, std::is_move_constructible<T>::value
+#else
+            std::is_nothrow_copy_constructible<T>::value, std::is_nothrow_move_constructible<T>::value
+#endif
+        >,
+        private assign_delete_base<T,
+#if LFNDS_HAS_EXCEPTIONS
+            std::is_copy_assignable<T>::value, std::is_move_assignable<T>::value
+#else
+            std::is_nothrow_copy_assignable<T>::value, std::is_nothrow_move_assignable<T>::value
+#endif
+    > {
     static_assert(!std::is_void<T>::value, "T must not be void");
         
     using value_type = T;
@@ -101,15 +142,25 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
     compressed_pair_element& operator=(compressed_pair_element&& rhs) 
         noexcept(std::is_nothrow_move_assignable<T>::value) = default;
 
-    template <typename T_ = T, typename... Args,
-        typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>>
+    template <typename T_ = T, typename ... Args,
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<std::is_constructible<T_, Args&&...>::value>
+#else
+        typename = std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value
+#endif
+            >
     compressed_pair_element(Args&&... args)
         noexcept(std::is_nothrow_constructible<T_, Args&&...>::value)
         : T(std::forward<Args>(args)...) {
     }
 
     template <typename T_ = T, typename K, typename... Args,
-        typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<K>, Args&&...>::value>>
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<std::is_constructible<T_, std::initializer_list<K>, Args&&...>::value>
+#else
+        typename = std::enable_if_t<std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value>
+#endif
+            >
     compressed_pair_element(std::initializer_list<K> il, Args&&... args)
         noexcept(std::is_nothrow_constructible<T_, std::initializer_list<K>, Args&&...>::value)
         : T(il, std::forward<Args>(args)...) {
@@ -131,7 +182,15 @@ struct TS_EMPTY_BASES compressed_pair_element<T, index, true> : private T,
         return static_cast<T const volatile&>(*this);
     }
 
-    void swap(compressed_pair_element& element) noexcept {
+    template <typename T_ = T,
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<is_swappable<T_>::value>
+#else
+        typename = std::enable_if_t<is_nothrow_swappable<T_>::value>
+#endif
+        >
+    void swap(compressed_pair_element& element)
+        noexcept(is_nothrow_swappable<T_>::value) {
         using std::swap;
         swap(static_cast<T&>(*this), static_cast<T&>(element));
     }
@@ -162,14 +221,27 @@ public:
         noexcept(conjunction_v<std::is_nothrow_move_assignable<_A>, std::is_nothrow_move_assignable<_B>>) = default;
 
     template <typename A__ = _A, typename B__ = _B,
-        typename = std::enable_if_t<conjunction_v<std::is_copy_constructible<A__>, std::is_copy_constructible<B__>>>>
+#if LFNDS_HAS_EXCEPTIONS
+        typename = std::enable_if_t<conjunction_v<std::is_copy_constructible<A__>, std::is_copy_constructible<B__>>>
+#else
+        typename = std::enable_if_t<conjunction_v<
+            std::is_nothrow_copy_constructible<A__>,
+            std::is_nothrow_copy_constructible<B__>>>
+#endif
+    >
     compressed_pair(const _A& a, const _B& b) 
         noexcept(conjunction_v<std::is_nothrow_copy_constructible<A__>, std::is_nothrow_copy_constructible<B__>>)
         : _base0(a) , _base1(b) {
     }
 
     template <typename A__ = _A, typename B__ = _B,
-        typename = std::enable_if_t<conjunction_v<std::is_move_constructible<A__>, std::is_move_constructible<B__>>>>
+#if LFNDS_HAS_EXCEPTIONS
+    typename = std::enable_if_t<conjunction_v<std::is_move_constructible<A__>, std::is_move_constructible<B__>>>
+#else
+    typename = std::enable_if_t<conjunction_v<
+        std::is_nothrow_move_constructible<A__>, std::is_nothrow_move_constructible<B__>>>
+#endif
+    >
     compressed_pair(_A&& a, _B&& b) 
         noexcept(conjunction_v<std::is_nothrow_move_constructible<A__>, std::is_nothrow_move_constructible<B__>>)
         : _base0(std::move(a)) , _base1(std::move(b)) {
@@ -192,17 +264,27 @@ public:
     }
 
     template <typename A__ = _A, typename B__ = _B,
-            typename = std::enable_if_t<conjunction_v<is_swappable<A__>, is_swappable<B__>>>>
+#if LFNDS_HAS_EXCEPTIONS
+            typename = std::enable_if_t<conjunction_v<is_swappable<A__>, is_swappable<B__>>>
+#else
+            typename = std::enable_if_t<conjunction_v<is_nothrow_swappable<A__>, is_nothrow_swappable<B__>>>
+#endif
+    >
     void swap(compressed_pair& __x) noexcept(
         noexcept(std::declval<_base0&>().swap(std::declval<_base0&>()))
-        && noexcept(std::declval<_base1&>().swap(std::declval<_base1&>())))
-    {
+        && noexcept(std::declval<_base1&>().swap(std::declval<_base1&>()))) {
         static_cast<_base0&>(*this).swap(static_cast<_base0&>(__x));
         static_cast<_base1&>(*this).swap(static_cast<_base1&>(__x));
     }
 };
 
-template <typename _A, typename _B, typename = std::enable_if_t<conjunction_v<is_swappable<_A>, is_swappable<_B>>>>
+template <typename _A, typename _B,
+#if LFNDS_HAS_EXCEPTIONS
+            typename = std::enable_if_t<conjunction_v<is_swappable<_A>, is_swappable<_B>>>
+#else
+            typename = std::enable_if_t<conjunction_v<is_nothrow_swappable<A__>, is_nothrow_swappable<B__>>>
+#endif
+        >
 void swap(compressed_pair<_A, _B>& a, compressed_pair<_A, _B>& b) 
     noexcept(noexcept(std::declval<compressed_pair<_A,_B>&>().swap(std::declval<compressed_pair<_A,_B>&>()))) { 
     return a.swap(b); 

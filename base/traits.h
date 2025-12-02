@@ -9,6 +9,24 @@
 #include <memory>
 #include <cassert>
 
+#ifndef LFNDS_STRICT_NO_EXCEPTION
+#  define LFNDS_STRICT_NO_EXCEPTION 0
+#endif
+
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+#  define LFNDS_COMPILER_HAS_EXCEPTIONS 1
+#else
+#  define LFNDS_COMPILER_HAS_EXCEPTIONS 0
+#endif
+
+#ifndef LFNDS_HAS_EXCEPTIONS
+#  if !LFNDS_COMPILER_HAS_EXCEPTIONS && LFNDS_STRICT_NO_EXCEPTION
+#    define LFNDS_HAS_EXCEPTIONS 0
+#  else
+#    define LFNDS_HAS_EXCEPTIONS 1
+#  endif
+#endif
+
 #if __cplusplus >= 202002L
 #  define LIKELY_IF(expr) if ((expr)) [[likely]]
 #  define UNLIKELY_IF(expr) if ((expr)) [[unlikely]]
@@ -27,7 +45,8 @@ namespace lite_fnds {
 
     template <size_t n, size_t cache_line_size = CACHE_LINE_SIZE>
     struct pad_t {
-        static_assert((cache_line_size & (cache_line_size - 1)) == 0, "cache_line_size must be power of two");
+        static_assert((cache_line_size & (cache_line_size - 1)) == 0, 
+            "cache_line_size must be power of two");
         uint8_t pad[(cache_line_size - (n % cache_line_size)) % cache_line_size];
     };
 
@@ -107,22 +126,25 @@ namespace lite_fnds {
     constexpr bool disjunction_v = disjunction<Ts...>::value;
 
     namespace swap_adl_tests {
-        struct tag { };
+        struct tag {};
 
-        template<class T> tag swap(T &, T &);
-        template<class T, std::size_t N> tag swap(T (&a)[N], T (&b)[N]);
+        template <typename T> 
+        tag swap(T &, T &);
+        
+        template <typename T, std::size_t N> 
+        tag swap(T (&a)[N], T (&b)[N]);
 
-        template<class, class>
+        template <typename, typename>
         auto can_swap(...) noexcept(false) -> std::false_type;
 
-        template<class T, class U>
+        template <typename T, typename U>
         auto can_swap(int) noexcept(noexcept(swap(std::declval<T &>(), std::declval<U &>()))) ->
             decltype(swap(std::declval<T &>(), std::declval<U &>()), std::true_type{});
 
-        template<class, class>
+        template <typename, typename>
         std::false_type uses_std(...);
 
-        template<class T, class U>
+        template <typename T, typename U>
         std::is_same<decltype(swap(std::declval<T &>(), std::declval<U &>())), tag> uses_std(int);
 
         template<class T>
@@ -146,9 +168,9 @@ namespace lite_fnds {
     struct is_swappable
             : std::integral_constant<
                 bool,
-                decltype(swap_adl_tests::can_swap<T, U>(0))::value &&
-                (!decltype(swap_adl_tests::uses_std<T, U>(0))::value ||
-                 (std::is_move_assignable<T>::value &&
+                decltype(swap_adl_tests::can_swap<T, U>(0))::value 
+             && (!decltype(swap_adl_tests::uses_std<T, U>(0))::value 
+             || (std::is_move_assignable<T>::value &&
                   std::is_move_constructible<T>::value))> {
     };
 
@@ -156,10 +178,9 @@ namespace lite_fnds {
     struct is_swappable<T[N], T[N]>
             : std::integral_constant<
                 bool,
-                decltype(swap_adl_tests::can_swap<T[N], T[N]>(0))::value &&
-                (!decltype(swap_adl_tests::uses_std<T[N], T[N]>(
-                     0))::value ||
-                 is_swappable<T, T>::value)> {
+                decltype(swap_adl_tests::can_swap<T[N], T[N]>(0))::value 
+                    && (!decltype(swap_adl_tests::uses_std<T[N], T[N]>(0))::value 
+                    || is_swappable<T, T>::value)> {
     };
 
     template<class T, class U = T>
@@ -181,6 +202,18 @@ namespace lite_fnds {
     using std::is_swappable;
     using std::is_nothrow_swappable;
 #endif
+
+    template <typename T>
+    struct can_strong_replace
+        : disjunction<std::is_nothrow_move_assignable<T>, std::is_nothrow_copy_assignable<T>,
+              std::is_nothrow_move_constructible<T>, std::is_nothrow_copy_constructible<T>> {
+    };
+
+    template <typename T>
+    struct can_strong_move_or_copy_constructible
+        : disjunction<std::is_nothrow_move_constructible<T>, 
+            std::is_nothrow_copy_constructible<T>> {
+    };
 
     template <typename T, typename ... Args>
     struct is_aggregate_constructible_impl {

@@ -21,14 +21,6 @@ namespace flow_impl {
     static constexpr size_t MAX_ZIP_N = 2;
 #endif
 
-#if defined (__GNUC__) || defined(__clang__)
-#  define LFNDS_ALWAYS_INLINE __attribute__((always_inline)) inline
-#elif defined(_MSC_VER)
-#  define LFNDS_ALWAYS_INLINE  __forceinline
-#else
-#  define LFNDS_ALWAYS_INLINE inline
-#endif
-
     enum class flow_node_type {
         flow_node_calc,
         flow_node_control,
@@ -104,13 +96,13 @@ namespace flow_impl {
         }
 
         template <typename X>
-        LFNDS_ALWAYS_INLINE auto operator()(X&& x)
+        auto operator()(X&& x)
             noexcept(noexcept(std::declval<G_T&>()(std::declval<F_T&>()(std::forward<X>(x))))) {
             return fg.second()(fg.first()(std::forward<X>(x)));
         }
 
         template <typename X>
-        LFNDS_ALWAYS_INLINE auto operator()(X&& x) const
+        auto operator()(X&& x) const
             noexcept(noexcept(std::declval<G_T&>()(std::declval<F_T&>()(std::forward<X>(x))))) {
             return fg.second()(fg.first()(std::forward<X>(x)));
         }

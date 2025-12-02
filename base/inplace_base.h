@@ -76,8 +76,7 @@ namespace lite_fnds {
         assign_delete_base(const assign_delete_base&) = default;
         assign_delete_base(assign_delete_base&&) noexcept = default;
         assign_delete_base& operator=(const assign_delete_base&) = delete;
-        assign_delete_base& operator=(assign_delete_base&&)
-            noexcept(std::is_nothrow_move_constructible<T>::value) = default;
+        assign_delete_base& operator=(assign_delete_base&&) noexcept = default;
     };
 
     template <typename T>
@@ -90,18 +89,10 @@ namespace lite_fnds {
     };
 
     template <typename T>
-    struct can_strong_replace
-        : disjunction<std::is_nothrow_move_assignable<T>, std::is_nothrow_copy_assignable<T>,
-                    std::is_nothrow_move_constructible<T>, std::is_nothrow_copy_constructible<T>> {
-    };
-
-    template <typename T>
-    struct can_strong_move_or_copy_constructible
-        : disjunction<std::is_nothrow_move_constructible<T>, std::is_nothrow_copy_constructible<T>> {
-    };
-
-    template <typename T>
     struct raw_inplace_storage_operations {
+#if !defined(LFNDS_HAS_EXCEPTIONS)
+        static_assert(std::is_nothrow_destructible<T>::value, "T must be nothrow destructible");
+#endif
     private:
         struct guard {
             T* _p{};
@@ -121,13 +112,21 @@ namespace lite_fnds {
         template <typename ... Args, std::enable_if_t<std::is_constructible<T, Args&&...>::value>* = nullptr>
         static T* _construct_at(void* addr, Args&& ... args)
             noexcept (std::is_nothrow_constructible<T, Args&&...>::value) {
+#if !defined(LFNDS_HAS_EXCEPTIONS)
+            static_assert(std::is_nothrow_constructible<T, Args&&...>::value,
+                "T must be nothrow constructible with Args...");
+#endif
             return ::new (addr) T(std::forward<Args>(args)...);
         }
 
         template <typename ... Args, std::enable_if_t<conjunction_v<
             negation<std::is_constructible<T, Args&&...>>, is_aggregate_constructible<T, Args&&...>>>* = nullptr>
         static T* _construct_at(void* addr, Args&& ... args)
-            noexcept (is_nothrow_aggregate_constructible<T, Args...>::value) {
+            noexcept (is_nothrow_aggregate_constructible<T, Args&&...>::value) {
+#if !defined(LFNDS_HAS_EXCEPTIONS)
+            static_assert(is_nothrow_aggregate_constructible<T, Args&&...>::value,
+                "T must be nothrow aggregate constructible with Args...");
+#endif
             return ::new (addr) T{ std::forward<Args>(args)... };
         }
 
@@ -144,17 +143,18 @@ namespace lite_fnds {
         static T* construct_at(void* addr, Args&& ... args)
             noexcept (std::conditional_t<std::is_constructible<T, Args&&...>::value,
                     std::is_nothrow_constructible<T, Args&&...>,
-                    is_nothrow_aggregate_constructible<T, Args...>>::value) {
+                    is_nothrow_aggregate_constructible<T, Args&&...>>::value) {
             return _construct_at(addr, std::forward<Args>(args)...);
         }
 
         template <typename U, typename ... Args,
-        std::enable_if_t<std::is_constructible<T, std::initializer_list<U>, Args &&...>::value>* = nullptr>
+            std::enable_if_t<std::is_constructible<T, std::initializer_list<U>, Args &&...>::value>* = nullptr>
         static T* construct_at(void* addr, std::initializer_list<U> il, Args&& ... args)
             noexcept (std::is_nothrow_constructible<T, std::initializer_list<U>, Args &&...>::value) {
             return  _construct_at(addr, il, std::forward<Args>(args)...);
         }
 
+#if LFNDS_HAS_EXCEPTIONS
         template <typename ... Args, std::enable_if_t<conjunction_v<
             std::is_constructible<T, Args&&...>,
             std::is_nothrow_move_assignable<T>>>* = nullptr>
@@ -203,7 +203,7 @@ namespace lite_fnds {
             construct_at(addr, *g.get());
         }
 
-        template <typename... Args, std::enable_if_t<conjunction_v<
+        template <typename ... Args, std::enable_if_t<conjunction_v<
             std::is_constructible<T, Args &&...>,
             negation<std::is_nothrow_move_assignable<T> >,
             negation<std::is_nothrow_copy_assignable<T> >,
@@ -215,7 +215,15 @@ namespace lite_fnds {
             destroy_at(addr);
             construct_at(addr, std::forward<Args>(args)...);
         }
+#else
+        template <typename ... Args, std::enable_if_t<std::is_nothrow_constructible<T, Args&&...>::value>* = nullptr>
+        static void emplace_at(void *addr, Args &&... args) noexcept {
+            destroy_at(addr);
+            construct_at(addr, std::forward<Args>(args)...);
+        }
+#endif
     };
+
 
     template <typename T, size_t len = sizeof(T), size_t align = alignof(T)>
     struct raw_inplace_storage_base : raw_inplace_storage_operations<T> {
@@ -248,8 +256,8 @@ namespace lite_fnds {
 
         template <typename U, typename... Args,
             std::enable_if_t<std::is_constructible<T, std::initializer_list<U>, Args &&...>::value>* = nullptr>
-        explicit raw_inplace_storage_base(std::initializer_list<U> il, Args &&... args)
-            noexcept (std::is_nothrow_constructible<T, std::initializer_list<U>, Args &&...>::value) {
+        explicit raw_inplace_storage_base(std::initializer_list<U> il, Args&&... args)
+            noexcept (std::is_nothrow_constructible<T, std::initializer_list<U>, Args&&...>::value) {
             this->construct(il, std::forward<Args>(args)...);
         }
 
@@ -263,21 +271,20 @@ namespace lite_fnds {
         void construct(Args&& ... args)
             noexcept (std::conditional_t<std::is_constructible<T, Args&&...>::value,
                 std::is_nothrow_constructible<T, Args&&...>,
-                is_nothrow_aggregate_constructible<T, Args...>>::value) {
+                is_nothrow_aggregate_constructible<T, Args&&...>>::value) {
             base::construct_at(_data, std::forward<Args>(args)...);
         }
 
         template <typename U, typename... Args,
-            std::enable_if_t<std::is_constructible<T, std::initializer_list<U>, Args &&...>::value>* = nullptr >
+            std::enable_if_t<std::is_constructible<T, std::initializer_list<U>, Args&&...>::value>* = nullptr >
         void construct(std::initializer_list<U> il, Args&& ... args)
-        noexcept (std::is_nothrow_constructible<T, std::initializer_list<U>, Args &&...>::value) {
+        noexcept (std::is_nothrow_constructible<T, std::initializer_list<U>, Args&&...>::value) {
             base::construct_at(_data, il, std::forward<Args>(args)...);
         }
 
-        template <typename ... Args, std::enable_if_t<conjunction_v<
-                std::is_constructible<T, Args&&...>,
-                std::is_nothrow_move_assignable<T>>, int> = 0>
-        void emplace(Args &&... args) noexcept(noexcept(base::emplace_at(_data, std::forward<Args>(args)...))) {
+        template <typename ... Args>
+        void emplace(Args &&... args)
+            noexcept(noexcept(base::emplace_at(_data, std::forward<Args>(args)...))) {
             base::emplace_at(_data, std::forward<Args>(args)...);
         }
     };

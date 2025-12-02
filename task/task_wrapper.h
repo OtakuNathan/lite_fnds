@@ -5,6 +5,7 @@
 #ifndef __LITE_FNDS_TASK_WRAPPER_H__
 #define __LITE_FNDS_TASK_WRAPPER_H__
 
+#include <cassert>
 #include <cstddef>
 #include <utility>
 #include "../base/traits.h"
@@ -47,9 +48,9 @@ namespace lite_fnds {
     }
 
     // this is not thread safe
-    template <size_t _sbo_size, size_t align>
-    class task_wrapper : public raw_type_erase_base<task_wrapper<_sbo_size, align>, _sbo_size, align>  {
-        using base = raw_type_erase_base<task_wrapper<_sbo_size, align>, _sbo_size, align>;
+    template <size_t sbo_size_, size_t align_>
+    class task_wrapper : public raw_type_erase_base<task_wrapper<sbo_size_, align_>, sbo_size_, align_>  {
+        using base = raw_type_erase_base<task_wrapper<sbo_size_, align_>, sbo_size_, align_>;
 
         template <class F, class... Args>
         struct is_compatible {
@@ -67,6 +68,9 @@ namespace lite_fnds {
             constexpr static bool value = decltype(test<F>(0))::value;
         };
     public:
+        static constexpr size_t sbo_size = sbo_size_;
+        static constexpr size_t align = align_;
+
         template <typename T, bool sbo_enable>
         void fill_vtable() noexcept {
             static_assert(std::is_object<T>::value && !std::is_reference<T>::value,

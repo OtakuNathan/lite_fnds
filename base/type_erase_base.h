@@ -141,7 +141,9 @@ namespace lite_fnds {
         fn_destroy_t *destroy;
     };
 
-    template <typename derived, size_t size = sbo_size, size_t align = alignof(std::max_align_t)>
+    template <typename derived, 
+        size_t size = sbo_size, 
+        size_t align = alignof(std::max_align_t)>
     struct raw_type_erase_base {
         static_assert(sizeof(void *) <= size, "the given buffer should be at least sufficient to store a T*");
         alignas(align) unsigned char _data[size];
@@ -153,7 +155,9 @@ namespace lite_fnds {
             : _vtable{nullptr} {
         }
 
-        raw_type_erase_base(const raw_type_erase_base &rhs) {
+#if LFNDS_HAS_EXCEPTIONS
+        raw_type_erase_base(const raw_type_erase_base& rhs)
+            : _vtable(nullptr) {
             if (rhs._vtable) {
                 if (!rhs._vtable->copy_construct) {
                     throw std::runtime_error("the object is not copy constructible");
@@ -164,7 +168,8 @@ namespace lite_fnds {
             }
         }
 
-        raw_type_erase_base(raw_type_erase_base &&rhs) {
+        raw_type_erase_base(raw_type_erase_base&& rhs)
+            : _vtable(nullptr) {
             if (rhs._vtable) {
                 if (!rhs._vtable->move_construct) {
                     throw std::runtime_error("the object is not move constructible");
@@ -193,6 +198,12 @@ namespace lite_fnds {
             this->swap(tmp);
             return *this;
         }
+#else
+        raw_type_erase_base(const raw_type_erase_base& rhs) = delete;
+        raw_type_erase_base(raw_type_erase_base&& rhs) = delete;
+        raw_type_erase_base& operator=(const raw_type_erase_base& rhs) = delete;
+        raw_type_erase_base& operator=(raw_type_erase_base&& rhs) = delete;
+#endif //  LFNDS_HAS_EXCEPTIONS
 
         bool has_value() const noexcept {
             return this->_vtable != nullptr;
@@ -204,9 +215,9 @@ namespace lite_fnds {
 
         template <typename U, typename T = std::decay_t<U>, typename... Args,
             std::enable_if_t<conjunction_v<
-                std::is_constructible<T, Args &&...>,
+                std::is_nothrow_constructible<T, Args&&...>,
                 std::integral_constant<bool, sizeof(T) <= buf_size>,
-                std::is_nothrow_constructible<T, Args &&...> > >* = nullptr>
+                can_strong_move_or_copy_constructible<T>>>* = nullptr>
         void emplace(Args &&... args) noexcept {
             static_assert(align >= alignof(T), "SBO placement-new requires buffer alignment >= alignof(T)");
             if (_vtable) {
@@ -218,6 +229,7 @@ namespace lite_fnds {
             derived_->template fill_vtable<T, true>();
         }
 
+#if LFNDS_HAS_EXCEPTIONS
         template <typename U, typename T = std::decay_t<U>, typename... Args,
             std::enable_if_t<conjunction_v<
                 std::is_constructible<T, Args &&...>,
@@ -246,8 +258,10 @@ namespace lite_fnds {
                 negation<std::is_nothrow_move_constructible<T> >,
                 std::is_nothrow_copy_constructible<T>
             > >* = nullptr>
-        void emplace(Args &&... args) noexcept(std::is_nothrow_constructible<T, Args &&...>::value) {
-            static_assert(align >= alignof(T), "SBO placement-new requires buffer alignment >= alignof(T)");
+        void emplace(Args &&... args) 
+            noexcept(std::is_nothrow_constructible<T, Args &&...>::value) {
+            static_assert(align >= alignof(T), 
+                "SBO placement-new requires buffer alignment >= alignof(T)");
             T tmp(std::forward<Args>(args)...);
             if (_vtable) {
                 _vtable->destroy(_data);
@@ -258,18 +272,27 @@ namespace lite_fnds {
             auto derived_ = static_cast<derived *>(this);
             derived_->template fill_vtable<T, true>();
         }
+#endif
 
         template <typename U, typename T = std::decay_t<U>, typename... Args,
             std::enable_if_t<conjunction_v<
+#if LFNDS_HAS_EXCEPTIONS
                 std::is_constructible<T, Args &&...>,
-                disjunction < std::integral_constant < bool, !(sizeof(T) <= buf_size) >,
-                    conjunction<negation<std::is_nothrow_constructible<T, Args &&...> >,
-                        negation<std::is_nothrow_move_constructible<T> >,
-                        negation<std::is_nothrow_copy_constructible<T> > > > > >* = nullptr>
+#else
+                std::is_nothrow_constructible<T, Args&&...>,
+#endif
+                disjunction<std::integral_constant<bool, !(sizeof(T) <= buf_size)>, 
+                            negation<can_strong_move_or_copy_constructible<T>>>>>* = nullptr>
         void emplace(Args &&... args) {
-            static_assert(align >= alignof(T), "SBO placement-new requires buffer alignment >= alignof(T)");
-            std::unique_ptr<T> tmp = std::make_unique<T>(std::forward<Args>(args)...);
+            static_assert(align >= alignof(T*), 
+                "SBO placement-new requires buffer alignment >= alignof(T*)");
 
+            std::unique_ptr<T> tmp = std::make_unique<T>(std::forward<Args>(args)...);
+#if !defined(LFNDS_HAS_EXCEPTIONS)
+            if (!tmp) {
+                return;
+            }
+#endif
             if (_vtable) {
                 _vtable->destroy(_data);
                 _vtable = nullptr;

@@ -7,13 +7,7 @@
 
 #include "../memory/inplace_t.h"
 #include "../base/traits.h"
-
-#if defined(__x86_64__) || defined(_M_X64)
-#include <immintrin.h>
-#elif defined(__aarch64__)
-#else
-#include <thread>
-#endif
+#include "yield.h"
 
 namespace lite_fnds {
     template <typename T, size_t capacity>
@@ -26,16 +20,6 @@ namespace lite_fnds {
         static_assert((capacity & (capacity - 1)) == 0, "capacity must be 2^n.");
 
     private:
-        static void yield() noexcept {
-#if defined(__x86_64__) || defined(_M_X64)
-                _mm_pause();
-#elif defined(__aarch64__)
-            __asm__ __volatile__("yield");
-#else
-                std::this_thread::yield();
-#endif
-        }
-
         struct node {
             raw_inplace_storage_base<storage_t> satellite;
 #ifdef TSAN_CLEAR
@@ -165,6 +149,7 @@ namespace lite_fnds {
             return true;
         }
 
+#if LFNDS_HAS_EXCEPTIONS
         template <typename T_ = storage_t,
                 std::enable_if_t<conjunction_v<negation<std::is_nothrow_copy_constructible<T_>>,
                         std::is_copy_constructible<T_>> >* = nullptr>
@@ -183,6 +168,7 @@ namespace lite_fnds {
 
             return true;
         }
+#endif
 
         bool emplace(storage_t&& val) noexcept {
             auto h_ = pop_from_list(free_);
@@ -214,6 +200,7 @@ namespace lite_fnds {
             return true;
         }
 
+#if LFNDS_HAS_EXCEPTIONS
         template <typename T_ = storage_t, typename... Args,
                 std::enable_if_t<conjunction_v<
                         negation<std::is_nothrow_constructible<T_, Args&&...>>,
@@ -234,6 +221,7 @@ namespace lite_fnds {
 
             return true;
         }
+#endif
 
         inplace_t<storage_t> pop() noexcept {
             auto h_ = pop_from_list(head_);
