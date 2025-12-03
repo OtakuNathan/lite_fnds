@@ -153,6 +153,7 @@ namespace lite_fnds {
                     }
 #endif
                 };
+#endif
                 return flow_calc_node<F_I, F_O, decltype(wrapper)>(std::move(wrapper));
             }
         };

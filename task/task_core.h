@@ -178,6 +178,7 @@ namespace lite_fnds {
                 return do_execute(std::index_sequence_for<Args...>(), std::is_same<R, void>());
             }
         private:
+#if LFNDS_HAS_EXCEPTIONS
             template <size_t ... idx>
             result_type do_execute(const std::integer_sequence<size_t, idx...>&, std::true_type) noexcept {
 #if LFNDS_COMPILER_HAS_EXCEPTIONS
