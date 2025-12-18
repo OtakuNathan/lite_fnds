@@ -15,41 +15,54 @@ struct spsc_queue {
     static_assert((capacity & (capacity - 1)) == 0, "capacity must be power of 2");
 
 protected:
-    using slot_t = raw_inplace_storage_base<T>;
-    slot_t _data[capacity];
+    struct alignas(CACHE_LINE_SIZE) slot_t {
+        std::atomic<uint32_t> ready;
+        raw_inplace_storage_base<T> storage;
 
-    alignas(CACHE_LINE_SIZE) std::atomic<size_t> _h { 0 };
+        slot_t() noexcept : ready { 0 } { }
+
+        T& data() noexcept {
+            return *storage.ptr();
+        }
+
+        void destroy() noexcept {
+            storage.destroy();
+        }
+    };
+
+    alignas(CACHE_LINE_SIZE) size_t _h { 0 };
     pad_t<sizeof(_h)> _pad1;
 
-    alignas(CACHE_LINE_SIZE) std::atomic<size_t> _t { 0 };
+    alignas(CACHE_LINE_SIZE) size_t _t { 0 };
     pad_t<sizeof(_t)> _pad2;
 
+    slot_t _data[capacity];
 public:
     spsc_queue() noexcept :
         _h { 0 } , _t { 0 } {
     }
 
     ~spsc_queue() noexcept  {
-        std::size_t h = _h.load(std::memory_order_relaxed);
-        const std::size_t t = _t.load(std::memory_order_relaxed);
-        while (h != t) {
-            this->_data[h & (capacity - 1)].destroy();
-            ++h;
+        while (_h != _t) {
+            auto& slot = _data[_h & (capacity - 1)];
+            if (slot.ready.load(std::memory_order_relaxed)) {
+                slot.destroy();
+                slot.ready.store(0, std::memory_order_relaxed);
+            }
+            ++_h;
         }
     }
 
    template <typename T_, typename... Args,
         std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
     bool try_emplace(Args&&... args) noexcept {
-       auto t = _t.load(std::memory_order_relaxed);
-       auto h = _h.load(std::memory_order_acquire);
-       if (t - h == capacity) {
+       auto& slot = this->_data[_t & (capacity - 1)];        // full
+       if (slot.ready.load(std::memory_order_acquire)) {
            return false;
        }
-
-       auto& slot = this->_data[t & (capacity - 1)];
-       slot.construct(std::forward<Args>(args)...);
-       _t.store(t + 1, std::memory_order_release);
+       slot.storage.construct(std::forward<Args>(args)...);
+       slot.ready.store(1, std::memory_order_release);
+       ++_t;
        return true;
     }
 
@@ -64,15 +77,14 @@ public:
 #endif
 
     bool try_emplace(T&& object) noexcept {
-        auto t = _t.load(std::memory_order_relaxed);
-        auto h = _h.load(std::memory_order_acquire);
-        if (t - h == capacity) {
+        auto& slot = this->_data[_t & (capacity - 1)];
+        // full
+        if (slot.ready.load(std::memory_order_acquire)) {
             return false;
         }
-
-        auto& slot = this->_data[t & (capacity - 1)];
-        slot.construct(std::move(object));
-        _t.store(t + 1, std::memory_order_release);
+        slot.storage.construct(std::move(object));
+        slot.ready.store(1, std::memory_order_release);
+        ++_t;
         return true;
     }
 
@@ -87,55 +99,46 @@ public:
 #endif
 
     void wait_and_emplace(T&& object) noexcept {
-        for (;;yield()) {
-            auto t = _t.load(std::memory_order_relaxed);
-            auto h = _h.load(std::memory_order_acquire);
-            if (t - h == capacity) {
+        for (;; yield()) {
+            auto& slot = this->_data[_t & (capacity - 1)];
+            // full
+            if (slot.ready.load(std::memory_order_acquire)) {
                 continue;
             }
-
-            auto& slot = this->_data[t & (capacity - 1)];
-            slot.construct(std::move(object));
-            _t.store(t + 1, std::memory_order_release);
-            break;
+            slot.storage.construct(std::move(object));
+            slot.ready.store(1, std::memory_order_release);
+            ++_t;
+            return;
         }
     }
 
     inplace_t<T> try_pop() noexcept {
         inplace_t<T> res;
-        auto h = _h.load(std::memory_order_relaxed);
-        auto t = _t.load(std::memory_order_acquire);
-        if (h == t) {
+        auto& slot = this->_data[_h & (capacity - 1)];
+        if (!slot.ready.load(std::memory_order_acquire)) {
             return res;
         }
 
-        auto& slot = this->_data[h & (capacity - 1)];
-        res.emplace(std::move(*slot.ptr()));
+        res.emplace(std::move(slot.data()));
         slot.destroy();
-
-        _h.store(h + 1, std::memory_order_release);
+        slot.ready.store(0, std::memory_order_release);
+        _h++;
         return res;
     }
 
     T wait_and_pop() noexcept {
         for (;;yield()) {
-            auto h = _h.load(std::memory_order_relaxed);
-            auto t = _t.load(std::memory_order_acquire);
-            if (h == t) {
+            auto& slot = this->_data[_h & (capacity - 1)];
+            if (!slot.ready.load(std::memory_order_acquire)) {
                 continue;
             }
 
-            auto& slot = this->_data[h & (capacity - 1)];
-            auto tmp = std::move(*slot.ptr());
+            T tmp(std::move(slot.data()));
             slot.destroy();
-
-            _h.store(h + 1, std::memory_order_release);
+            slot.ready.store(0, std::memory_order_release);
+            _h++;
             return tmp;
         }
-    }
-
-    size_t size() const noexcept {
-        return _t.load(std::memory_order_relaxed) - _h.load(std::memory_order_relaxed);
     }
 };
 
@@ -148,16 +151,15 @@ struct mpsc_queue {
     static_assert((capacity & (capacity - 1)) == 0,
         "capacity must be power of 2");
 
+    using value_type = T;
 protected:
     static constexpr size_t MASK = capacity - 1;
-    using value_type = T;
 
     struct alignas(CACHE_LINE_SIZE) slot_t {
-        std::atomic<uint8_t> ready;
+        std::atomic<uint32_t> ready;
         raw_inplace_storage_base<T> storage;
 
-        slot_t() noexcept : ready { 0 } {
-        }
+        slot_t() noexcept : ready { 0 } { }
 
         T& data() noexcept { 
             return *storage.ptr(); 
@@ -167,28 +169,28 @@ protected:
             storage.destroy(); 
         }
     };
-    
-    alignas(CACHE_LINE_SIZE) slot_t _data[capacity];
 
-    alignas(CACHE_LINE_SIZE) std::atomic<size_t> _h { 0 };
+    alignas(CACHE_LINE_SIZE) size_t _h { 0 };
     pad_t<sizeof(_h)> _pad1;
 
     alignas(CACHE_LINE_SIZE) std::atomic<size_t> _t { 0 };
     pad_t<sizeof(_t)> _pad2;
 
+    alignas(CACHE_LINE_SIZE) slot_t _data[capacity];
+
+    static_assert(alignof(slot_t) == CACHE_LINE_SIZE, "slot_t must be cache-line aligned");
 public:
     mpsc_queue() = default;
 
     ~mpsc_queue() noexcept {
-        size_t h = _h.load(std::memory_order_relaxed);
         const size_t t = _t.load(std::memory_order_relaxed);
-        while (h != t) {
-            slot_t& s = _data[h & MASK];
+        while (_h != t) {
+            slot_t& s = _data[_h & MASK];
             if (s.ready.load(std::memory_order_relaxed)) {
                 s.destroy();
                 s.ready.store(0, std::memory_order_relaxed);
             }
-            ++h;
+            ++_h;
         }
     }
 
@@ -199,14 +201,10 @@ public:
 
         for (int attempt = 0; attempt < max_retry; ++attempt) {
             size_t t = _t.load(std::memory_order_relaxed);
-            size_t h = _h.load(std::memory_order_acquire);
 
-            if (t - h == capacity) {
-                return false;
-            }
-
-            if (_t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-                slot_t& slot = _data[t & MASK];
+            slot_t& slot = _data[t & MASK];
+            if (slot.ready.load(std::memory_order_acquire) == 0
+             && _t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
                 slot.storage.construct(std::forward<Args>(args)...);
                 slot.ready.store(1, std::memory_order_release);
                 return true;
@@ -233,18 +231,15 @@ public:
 
         for (int attempt = 0; attempt < max_retry; ++attempt) {
             size_t t = _t.load(std::memory_order_relaxed);
-            size_t h = _h.load(std::memory_order_acquire);
 
-            if (t - h == capacity) {
-                return false;
-            }
-
-            if (_t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-                slot_t& slot = _data[t & MASK];
+            slot_t& slot = _data[t & MASK];
+            if (slot.ready.load(std::memory_order_acquire) == 0
+                && _t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
                 slot.storage.construct(std::move(object));
                 slot.ready.store(1, std::memory_order_release);
                 return true;
             }
+
             yield();
         }
         return false;
@@ -255,14 +250,10 @@ public:
     void wait_and_emplace(Args&&... args) noexcept {
         for (;; yield()) {
             size_t t = _t.load(std::memory_order_relaxed);
-            size_t h = _h.load(std::memory_order_acquire);
 
-            if (t - h == capacity) {
-                continue;
-            }
-
-            if (_t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-                slot_t& slot = _data[t & MASK];
+            slot_t& slot = _data[t & MASK];
+            if (slot.ready.load(std::memory_order_acquire) == 0
+                && _t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
                 slot.storage.construct(std::forward<Args>(args)...);
                 slot.ready.store(1, std::memory_order_release);
                 return;
@@ -285,14 +276,10 @@ public:
     void wait_and_emplace(T&& object) noexcept {
         for (;; yield()) {
             size_t t = _t.load(std::memory_order_relaxed);
-            size_t h = _h.load(std::memory_order_acquire);
 
-            if (t - h == capacity) {
-                continue;
-            }
-
-            if (_t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-                slot_t& slot = _data[t & MASK];
+            slot_t& slot = _data[t & MASK];
+            if (slot.ready.load(std::memory_order_acquire) == 0
+                && _t.compare_exchange_weak(t, t + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
                 slot.storage.construct(std::move(object));
                 slot.ready.store(1, std::memory_order_release);
                 return;
@@ -302,44 +289,37 @@ public:
 
     inplace_t<T> try_pop() noexcept {
         inplace_t<T> res;
-        size_t h = _h.load(std::memory_order_relaxed);
-        size_t t = _t.load(std::memory_order_relaxed);
-        if (h == t) {
-            return res;
-        }
 
-        slot_t& slot = this->_data[h & MASK];
+        slot_t& slot = this->_data[_h & MASK];
         if (!slot.ready.load(std::memory_order_acquire)) {
             return res;
         }
 
         res.emplace(std::move(slot.data()));
         slot.destroy();
-        slot.ready.store(0, std::memory_order_relaxed);
-        _h.store(h + 1, std::memory_order_release);
+        slot.ready.store(0, std::memory_order_release);
+        ++_h;
         return res;
     }
 
     T wait_and_pop() noexcept {
-        for (;;) {
-            size_t h = _h.load(std::memory_order_relaxed);
-
-            slot_t& slot = this->_data[h & MASK];
+        for (;;yield()) {
+            slot_t& slot = this->_data[_h & MASK];
             if (!slot.ready.load(std::memory_order_acquire)) {
-                yield();
                 continue;
             }
 
             T tmp = std::move(slot.data());
             slot.destroy();
-            slot.ready.store(0, std::memory_order_relaxed);
-            _h.store(h + 1, std::memory_order_release);
+            slot.ready.store(0, std::memory_order_release);
+            ++_h;
             return tmp;
         }
     }
 
+    // this should only be called in consumer thread (otherwise UB)
     size_t size() const noexcept {
-        return _t.load(std::memory_order_relaxed) - _h.load(std::memory_order_relaxed);
+        return _t.load(std::memory_order_relaxed) - _h;
     }
 };
 
@@ -358,7 +338,7 @@ private:
         }
 
         ~slot_t() noexcept {
-            if (sequence & 1) {
+            if (sequence.load(std::memory_order_relaxed) & 1) {
                 destroy();
             }
         }
@@ -407,7 +387,6 @@ public:
             }
         }
     }
-
 
     template <typename T_ = T, typename... Args,
         std::enable_if_t<std::is_nothrow_constructible<T_, Args&&...>::value>* = nullptr>
